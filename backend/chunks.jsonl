@@ -1,0 +1,4 @@
+data: {"id": "chatcmpl-aae5ee2db1e8", "object": "chat.completion.chunk", "created": 1772028635, "model": "gpt-4o", "choices": [{"delta": {"role": "assistant", "content": ""}, "index": 0, "finish_reason": null}]}
+data: {"id": "chatcmpl-aae5ee2db1e8", "object": "chat.completion.chunk", "created": 1772028635, "model": "gpt-4o", "choices": [{"delta": {"content": "I'm having trouble verifying your session right now. Could you try closing and reopening the voice chat?"}, "index": 0, "finish_reason": null}]}
+data: {"id": "chatcmpl-aae5ee2db1e8", "object": "chat.completion.chunk", "created": 1772028635, "model": "gpt-4o", "choices": [{"delta": {}, "index": 0, "finish_reason": "stop"}]}
+data: [DONE]

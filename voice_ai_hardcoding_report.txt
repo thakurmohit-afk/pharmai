@@ -1,0 +1,32 @@
+VOICE AI HARDCODING ANALYSIS REPORT
+===================================
+
+I have analyzed the Voice AI components across the frontend and backend of the Hackfusia project.
+
+1. CRITICAL SECRETS & IDS (Clean - No Hardcoding)
+-------------------------------------------------
+- ElevenLabs Agent ID: Dynamically loaded from `import.meta.env.VITE_ELEVENLABS_AGENT_ID` in `useVoiceAgent.ts`.
+- ElevenLabs API Key / OpenAI API Keys: Dynamically loaded via `.env` variables in the FastAPI backend.
+- Auth Tokens: Dynamically fetched and passed into `dynamicVariables` for secure connection.
+
+2. HARDCODED CONSTANTS & FALLBACKS (Present)
+--------------------------------------------
+While there is no "dangerous" hardcoding, there are several hardcoded strings and configuration constants in the Voice AI pipeline:
+
+- LLM Model: `"gpt-4o-mini"` is hardcoded as the default model in `elevenlabs_llm.py` (`ChatCompletionRequest`).
+- Filler Words (`elevenlabs_llm.py`):
+    The `FILLERS` array is hardcoded to output specific English phrases while the AI processes data:
+    "Hmm, let me check that for you...", "Give me one second...", etc.
+- Heuristic Keywords (`elevenlabs_llm.py`):
+    `GREETING_KEYWORDS` is hardcoded with English/Hindi words (`"hi", "namaste", "affirmative", "yes"`) to bypass database lookups on simple greetings.
+- Fallback Audio Responses (`elevenlabs_llm.py`):
+    Hardcoded safety nets for ElevenLabs TTS to speak if the system crashes or encounters silence, e.g.:
+    "I'm having trouble verifying your session right now..."
+    "I didn't quite catch that, could you please repeat it?"
+- Voice UI Configuration (`useVoiceAgent.ts`):
+    `endOfSpeechTimeout: 1000` (1 second silence detection limit).
+    `MAX_STALE_AGE_S = 30` (30 seconds limit before UI cards time out).
+
+SUMMARY
+-------
+The Voice AI integration is dynamic and securely accesses keys via environment variables. The only "hardcoded" elements are structural fallback phrases, model identifiers, and timing constants which is standard architectural practice.

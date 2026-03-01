@@ -1,0 +1,81 @@
+# Context & Architecture of PharmAI
+You are an expert full-stack developer and AI engineer tasked with implementing advanced predictive and semantic features for **PharmAI**, an AI-powered personal pharmacy application. Our core tech stack includes:
+- **Backend:** FastAPI (Python), SQLAlchemy (SQLite), Pydantic, LangChain/LangGraph (Conversational Medical AI pipeline).
+- **Frontend:** React (Vite), TypeScript, Tailwind CSS, Framer Motion, Recharts.
+
+We need to implement a suite of advanced features focusing on Predictive Analytics, Semantic Search, and AI-Driven Profiling for both users and the Admin panel.
+
+## Feature Set & Requirements
+
+### 1. Advanced Semantic Context-Aware Search
+Implement a smart semantic search engine that goes beyond keyword matching.
+- **Intent-Based Search:** When a user types *"medicine for dry cough without drowsiness"* or *"BP tablet safe for diabetic patient"*, the system must understand the condition, filter by OTC/Rx, check interaction risks, and rank results intelligently.
+- **Context-Aware Safety:** If a user with known Hypertension and Diabetes searches for *"painkiller"*, prioritize safer NSAID alternatives and downrank medications with contraindications.
+- **Risk-Aware UI Badges:** Search results must display visual indicators:
+  - Interaction Risk Badge (High/Med/Low)
+  - Prescription Required Flag
+  - Stock Availability
+- **Explainable AI UI:** Add a "Why This Result?" hover/click popover that explains the reasoning (e.g., *"Matches your condition, No allergy conflict, Safe for diabetics"*). This is crucial for clinical trust.
+
+### 2. Admin Semantic Search capabilities
+Empower admins with natural language querying over the database.
+- **Queries like:**
+  - *"Users at high refill risk"*
+  - *"Low stock meds"*
+  - *"Users with expired prescriptions"*
+  - *"High polypharmacy cases"*
+- **Output:** The system should parse the natural language, translate it into complex SQL/ORM queries, and return structured UI elements (tables/graphs).
+
+### 3. Predictive Stock Analysis (Machine Learning)
+Add predictive analytics to the Admin Dashboard.
+- **Model:** Train/implement a lightweight time-series forecast model (ARIMA/Prophet or a simple Scikit-Learn RandomForest regressor) using historical dispensing datetimes.
+- **Predictive Refill Dashboard:** Show a forecast graph predicting when stock will run out for top medicines.
+
+### 4. Seasonal Medicine Refill Prediction
+- Create a warning system for the Admin based on seasonality.
+- **Example:** Approaching monsoon season triggers a % prediction increase for demand in specific categories (e.g., Anti-allergens, fever meds).
+- **UI:** Render a "Seasonal Alert" card predicting demand spikes.
+
+### 5. Medicine Stock Grid (GitHub Commit Style)
+- **UI Component:** Implement a heatmap grid in the Admin Panel similar to LeetCode/GitHub contribution graphs.
+- **Data:** Each block represents a day. Colors range from light to dark representing stock movement/dispensing volume for that specific day.
+
+### 6. Live Trace of LangFuse Actions
+- Integrate **Langfuse** into the LangGraph pipeline to trace every node execution.
+- **Admin UI Integration:** Add a "Live Agent Trace" feed in the Admin panel that streams real-time LLM actions, token usage, and latency metrics directly from Langfuse.
+
+### 7. AI Patient Profile Summary
+- Compile user history (medicines bought, stated issues) to generate a dynamic AI summary.
+- **Features:** 
+  - Predict probable unstated conditions based on medication history (e.g., Metformin + Amlodipine = Diabetic Hypertensive).
+  - Generate a "Patient Risks" section identifying potential polypharmacy or adherence issues.
+
+### 8. Prescription Color Coding (EU Standard)
+- Implement EU standard color-coding for prescriptions based on their classification and validity limits.
+- **UI Update:** Prescription cards in both User Chat and Admin Queue should visually reflect these colors (e.g., White for standard, Blue/Pink for controlled substances/specific validity thresholds).
+
+---
+
+## Implementation Plan for You
+
+Please provide a comprehensive, step-by-step implementation guide including:
+
+**1. Architecture & Database Changes:**
+- Which models need updating? (e.g., adding a `condition` or `tags` column to `Medicine` for semantic search, adding a generic user history JSON field).
+- How will we store or generate vectors if using embeddings for the semantic search (e.g., FAISS or PGVector, or sqlite-vss)?
+
+**2. Backend Implementation (FastAPI):**
+- **Semantic Search Engine:** How will you build the LLM-driven or embedding-based search logic? Provide the exact pipeline.
+- **Admin NLP Query Parser:** Logic to turn *"Users at high refill risk"* into a DB query.
+- **ML Integration:** How to structure the lightweight ML service for predictive forecasting without blocking the async FastAPI loop.
+- **Langfuse:** Required environment variables, decorator patterns, and the endpoint to stream logs to the frontend.
+
+**3. Frontend Implementation (React):**
+- **Heatmap Grid:** Which library to use (e.g., `react-calendar-heatmap` or custom D3/SVG)? Give a component snippet.
+- **Explainable Cards:** Code for the *"Why This Result?"* popover/tooltip component with visual badges.
+- **Admin Dashboards:** Structure for the new Predictive Analytics and Seasonal Warn tabs.
+
+**4. Prompts & LLM Calls:**
+- Provide the exact system prompts you will use for the Context-Aware Search ranking and the AI Patient Profile summarization.
+
+Do not write the entire codebase immediately. First, acknowledge this plan, critique the proposed architecture (e.g., SQLite vs PostgreSQL for Semantic Search), and provide your high-level architectural decisions and the first phase of code implementation.
