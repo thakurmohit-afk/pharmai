@@ -1,12 +1,19 @@
-# Render.com deployment config for FastAPI backend
+# Render.com deployment — backend + frontend
 services:
+  # ── FastAPI Backend ──
   - type: web
-    name: pharmadash-api
+    name: pharmai-api
     runtime: python
-    region: singapore  # closest to India for hackathon
+    region: singapore
     plan: free
     rootDir: backend
-    buildCommand: pip install -r requirements.txt
+    buildCommand: |
+      pip install -r requirements.txt && python -c "
+      import asyncio
+      from seed_data import seed_database
+      asyncio.run(seed_database())
+      print('Database seeded successfully')
+      "
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
@@ -15,8 +22,12 @@ services:
         value: sqlite+aiosqlite:///./pharmacy.db
       - key: APP_ENV
         value: production
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: COOKIE_SAMESITE
+        value: none
       - key: CORS_ORIGINS
-        sync: false  # set manually after frontend deploys
+        sync: false  # set after frontend deploys
       - key: OPENAI_API_KEY
         sync: false
       - key: GEMINI_API_KEY
@@ -39,3 +50,26 @@ services:
         value: "false"
       - key: PAYMENT_ENABLED
         value: "true"
+
+  # ── Vite Frontend (Static Site) ──
+  - type: web
+    name: pharmai-app
+    runtime: static
+    region: singapore
+    plan: free
+    rootDir: frontend_v2
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    headers:
+      - path: /*
+        name: Cache-Control
+        value: public, max-age=0, must-revalidate
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_BASE
+        sync: false  # set to https://pharmai-api.onrender.com/api
+      - key: VITE_ELEVENLABS_AGENT_ID
+        value: agent_8001kjsqz4dqe7ms98t9pk8syem9

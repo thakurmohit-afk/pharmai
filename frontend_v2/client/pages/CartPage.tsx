@@ -3,11 +3,16 @@ import Sidebar from "@/components/Sidebar";
 import TopNavbar from "@/components/TopNavbar";
 import { useTheme } from "@/context/ThemeContext";
 import { cn } from "@/lib/utils";
-import { getCart, updateCartItem, removeCartItem, clearCart, checkoutCart } from "@/services/api";
+import { getCart, updateCartItem, removeCartItem, clearCart, checkoutCart, verifyPayment } from "@/services/api";
 import { motion, AnimatePresence } from "framer-motion";
+import confetti from "canvas-confetti";
 import {
     ShoppingCart, Trash2, Minus, Plus, Loader2, Package, CheckCircle, XCircle,
 } from "lucide-react";
+
+declare global {
+    interface Window { Razorpay: any; }
+}
 
 export default function CartPage() {
     const { theme } = useTheme();
@@ -58,7 +63,46 @@ export default function CartPage() {
     const handleCheckout = async () => {
         setCheckingOut(true);
         try {
-            await checkoutCart();
+            const result = await checkoutCart();
+
+            // Open Razorpay if available
+            if (result?.razorpay_order_id && result?.key_id && window.Razorpay) {
+                const rzp = new window.Razorpay({
+                    key: result.key_id,
+                    amount: Math.round((result.amount || 0) * 100),
+                    currency: result.currency || "INR",
+                    name: "PharmAI",
+                    description: "Medicine Order",
+                    order_id: result.razorpay_order_id,
+                    handler: async (response: any) => {
+                        // Razorpay handler = payment succeeded at gateway
+                        confetti({ particleCount: 120, spread: 80, origin: { y: 0.6 }, colors: ["#10b981", "#14b8a6", "#34d399", "#6ee7b7"] });
+                        setOrderSuccess(true);
+                        setCheckingOut(false);
+
+                        // Backend verify is best-effort
+                        try {
+                            await verifyPayment({
+                                razorpay_order_id: response.razorpay_order_id,
+                                razorpay_payment_id: response.razorpay_payment_id,
+                                razorpay_signature: response.razorpay_signature,
+                                payment_method: "card",
+                            });
+                        } catch (err) {
+                            console.warn("Backend verify failed (non-critical):", err);
+                        }
+                        await loadCart();
+                    },
+                    modal: {
+                        ondismiss: () => setCheckingOut(false),
+                    },
+                    theme: { color: "#10b981" },
+                });
+                rzp.open();
+                return;
+            }
+
+            // Fallback if no Razorpay
             setOrderSuccess(true);
             await loadCart();
         } catch (err) {
@@ -69,7 +113,7 @@ export default function CartPage() {
     };
 
     const items = cart?.items || [];
-    const totalAmount = items.reduce((sum: number, item: any) => sum + (item.price || 0) * (item.quantity || 0), 0);
+    const totalAmount = cart?.total_amount || 0;
 
     return (
         <div
@@ -149,7 +193,7 @@ export default function CartPage() {
                                 <div className="lg:col-span-2 space-y-3">
                                     {items.map((item: any, i: number) => (
                                         <motion.div
-                                            key={item.id || i}
+                                            key={item.item_id || i}
                                             initial={{ opacity: 0, x: -12 }}
                                             animate={{ opacity: 1, x: 0 }}
                                             transition={{ delay: i * 0.05 }}
@@ -170,15 +214,15 @@ export default function CartPage() {
                                                     {item.medicine_name || item.name || "Medicine"}
                                                 </p>
                                                 <p className={cn("text-xs", theme === "dark" ? "text-slate-500" : "text-stone-400")}>
-                                                    ₹{item.price || 0} each
+                                                    ₹{item.unit_price || 0} per strip
                                                 </p>
                                             </div>
 
                                             {/* Qty controls */}
                                             <div className="flex items-center gap-2">
                                                 <button
-                                                    onClick={() => handleUpdate(item.id, (item.quantity || 1) - 1)}
-                                                    disabled={updating === item.id}
+                                                    onClick={() => handleUpdate(item.item_id, (item.quantity || 1) - 1)}
+                                                    disabled={updating === item.item_id}
                                                     className={cn(
                                                         "w-8 h-8 rounded-lg flex items-center justify-center transition-colors",
                                                         theme === "dark" ? "bg-white/[0.04] hover:bg-white/[0.08] text-slate-400" : "bg-stone-100 hover:bg-stone-200 text-stone-600"
@@ -187,11 +231,11 @@ export default function CartPage() {
                                                     <Minus className="w-3.5 h-3.5" />
                                                 </button>
                                                 <span className={cn("w-8 text-center text-sm font-bold", theme === "dark" ? "text-slate-200" : "text-slate-800")}>
-                                                    {updating === item.id ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : item.quantity || 1}
+                                                    {updating === item.item_id ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : item.quantity || 1}
                                                 </span>
                                                 <button
-                                                    onClick={() => handleUpdate(item.id, (item.quantity || 1) + 1)}
-                                                    disabled={updating === item.id}
+                                                    onClick={() => handleUpdate(item.item_id, (item.quantity || 1) + 1)}
+                                                    disabled={updating === item.item_id}
                                                     className={cn(
                                                         "w-8 h-8 rounded-lg flex items-center justify-center transition-colors",
                                                         theme === "dark" ? "bg-white/[0.04] hover:bg-white/[0.08] text-slate-400" : "bg-stone-100 hover:bg-stone-200 text-stone-600"
@@ -203,12 +247,12 @@ export default function CartPage() {
 
                                             {/* Item total */}
                                             <p className={cn("text-sm font-bold w-20 text-right", theme === "dark" ? "text-slate-200" : "text-slate-800")}>
-                                                ₹{((item.price || 0) * (item.quantity || 1)).toFixed(2)}
+                                                ₹{(item.subtotal || ((item.unit_price || 0) * (item.quantity || 1))).toFixed(2)}
                                             </p>
 
                                             {/* Remove */}
                                             <button
-                                                onClick={() => handleUpdate(item.id, 0)}
+                                                onClick={() => handleUpdate(item.item_id, 0)}
                                                 className={cn(
                                                     "w-8 h-8 rounded-lg flex items-center justify-center transition-colors",
                                                     theme === "dark" ? "text-red-400/50 hover:text-red-400 hover:bg-red-500/10" : "text-red-300 hover:text-red-500 hover:bg-red-50"

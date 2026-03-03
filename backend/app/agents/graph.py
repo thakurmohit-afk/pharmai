@@ -394,68 +394,6 @@ def _set_skipped(steps: dict, step_ids: list[str], reason: str) -> None:
         steps[step_id]["output"] = {"reason": reason}
 
 
-def _check_refill_gate(state: dict) -> dict | None:
-    """Check if a refill prompt should be shown during checkout.
-
-    Returns the refill medicine dict if a prompt should be shown, or None if not.
-    This function is PURE — it does not mutate state.
-
-    Loop prevention:
-    - Only fires when refill_offer_status == 'not_checked'
-    - Filters out medicines already in the pending cart
-    - Returns at most one suggestion
-    """
-    pending = state.get("pending_state", {})
-    refill_status = str(pending.get("refill_offer_status", "not_checked") or "not_checked")
-
-    # Gate: only check once per checkout cycle
-    if refill_status != "not_checked":
-        return None
-
-    suggestions = state.get("prediction", {}).get("refill_suggestions", [])
-    # Voice mode fallback: predictive agent only runs on early turns,
-    # so by confirmation time state["prediction"] is empty.
-    # Use cached suggestions from pending state as fallback.
-    if not suggestions:
-        suggestions = pending.get("_cached_refill_suggestions", [])
-    if not isinstance(suggestions, list) or not suggestions:
-        return None
-
-    # Build set of medicine IDs already in the cart
-    pending_medicines = pending.get("pending_medicines", [])
-    cart_med_ids = set()
-    cart_med_names = set()
-    for med in pending_medicines:
-        mid = med.get("medicine_id", med.get("id"))
-        if mid:
-            cart_med_ids.add(str(mid))
-        name = (med.get("name") or "").lower().strip()
-        if name:
-            cart_med_names.add(name)
-
-    # Find first eligible refill not already in cart
-    for suggestion in suggestions:
-        med_id = str(suggestion.get("medicine_id", "") or "")
-        med_name = (suggestion.get("medicine_name", suggestion.get("name", "")) or "").lower().strip()
-        days_left = suggestion.get("days_until_run_out", suggestion.get("days_remaining"))
-
-        # Skip if already in cart
-        if med_id and med_id in cart_med_ids:
-            continue
-        if med_name and med_name in cart_med_names:
-            continue
-
-        # Return the eligible refill medicine
-        return {
-            "medicine_id": med_id,
-            "medicine_name": suggestion.get("medicine_name", suggestion.get("name", "your regular medicine")),
-            "days_until_run_out": days_left,
-            "urgency": suggestion.get("urgency", "medium"),
-            "suggested_quantity": suggestion.get("suggested_quantity"),
-        }
-
-    return None
-
 
 async def _inject_counseling(state: dict) -> None:
     """Append patient counseling text to the response message if order items are available."""
@@ -906,6 +844,45 @@ async def run_pharmacy_workflow(
     }
 
     try:
+        # ── CART CHECKOUT FAST-PATH ──────────────────────────────────
+        # The CartDrawer sends "My cart checkout is complete.Order ID: <uuid>"
+        # after a successful checkout.  Detect this early and return a
+        # delivery-confirmation response so the frontend shows a
+        # DeliveryTracker instead of routing through the full pipeline.
+        import re as _re
+        _cart_done_match = _re.search(
+            r"(?:cart\s+checkout\s+is\s+complete|checkout\s+complete).*?Order\s*ID[:.]?\s*([0-9a-fA-F-]{36})",
+            message,
+            _re.IGNORECASE,
+        )
+        if _cart_done_match:
+            _cart_order_id = _cart_done_match.group(1)
+            logger.info("[%s] Cart checkout acknowledged for order %s", trace_id[:8], _cart_order_id)
+            state["pending_state"] = empty_pending_state()
+            state["response_message"] = (
+                "Your order has been placed successfully! "
+                "You can track your delivery status below."
+            )
+            state["understanding_confidence"] = 0.95
+            state["final_decision"] = {
+                "action": "delivery_confirmed",
+                "combined_confidence": 0.95,
+                "risk_level": "low",
+                "needs_clarification": False,
+                "reasoning": "Cart checkout completed — order confirmed",
+            }
+            state["execution_result"] = {
+                "success": True,
+                "order_id": _cart_order_id,
+            }
+            _set_skipped(
+                steps,
+                ["profiling", "predictive", "medicine_search", "pharmacist", "safety", "inventory", "execution"],
+                "Cart checkout fast-path",
+            )
+            state["pipeline_steps"] = list(steps.values())
+            return state
+
         pending = normalize_pending_state(state.get("pending_state"))
         initial_pending_phase = pending_phase(pending)
         voice_turn_count = len(
@@ -942,15 +919,7 @@ async def run_pharmacy_workflow(
                 "refill_alerts": len(state.get("prediction", {}).get("refill_suggestions", [])),
             }
 
-            # Cache refill suggestions in pending state for voice mode.
-            # The predictive agent only runs on early turns; by confirmation
-            # time state["prediction"] is reset to {}. This cache ensures
-            # _check_refill_gate can still find the suggestions later.
-            _refill_sugs = state.get("prediction", {}).get("refill_suggestions", [])
-            if _refill_sugs:
-                pending = normalize_pending_state(state.get("pending_state"))
-                pending["_cached_refill_suggestions"] = _refill_sugs
-                state["pending_state"] = pending
+
         else:
             _set_skipped(
                 steps,
@@ -1305,90 +1274,7 @@ async def run_pharmacy_workflow(
             )
 
             if confirmation_intent == "confirm":
-                # ── REFILL GATE: Check if we should prompt before proceeding ──
-                refill_status = str(pending.get("refill_offer_status", "not_checked") or "not_checked")
-
-                if refill_status == "offered":
-                    # User is responding YES to the refill prompt from previous turn.
-                    # Accept the refill: add the offered medicine to the cart.
-                    refill_med = pending.get("refill_offer_medicine", {})
-                    refill_med_name = refill_med.get("medicine_name", "refill medicine")
-                    pending["refill_offer_status"] = "accepted"
-                    pending["refill_offer_medicine"] = refill_med
-                    state["pending_state"] = pending
-                    logger.info(
-                        "[%s] Refill ACCEPTED for %s — adding to cart and proceeding",
-                        trace_id[:8], refill_med_name,
-                    )
-
-                    # Try to add this refill medicine to the pending cart
-                    refill_as_medicine = {
-                        "medicine_id": refill_med.get("medicine_id", ""),
-                        "name": refill_med_name,
-                        "quantity": 1,
-                        "requested_qty": 1,
-                        "requested_unit": "strip",
-                    }
-                    merged_quote, merged_meds = _merge_into_pending_cart(
-                        pending, [refill_as_medicine], message="add refill",
-                    )
-                    if merged_quote:
-                        pending["pending_quote"] = merged_quote
-                        pending["pending_medicines"] = merged_meds
-                        state["pending_state"] = pending
-                        state["quote"] = merged_quote
-                    # Fall through to normal execution below (deterministic_execute path)
-
-                elif refill_status == "not_checked":
-                    # First confirmation — check if refill should be offered
-                    refill_candidate = _check_refill_gate(state)
-                    if refill_candidate:
-                        # Offer the refill — pause checkout, do NOT proceed to execution
-                        pending["refill_offer_status"] = "offered"
-                        pending["refill_offer_medicine"] = refill_candidate
-                        state["pending_state"] = pending
-
-                        med_name = refill_candidate.get("medicine_name", "your regular medicine")
-                        days_left = refill_candidate.get("days_until_run_out")
-
-                        if days_left is not None and int(days_left) > 0:
-                            prompt = (
-                                f"Before I process your order — I noticed you have about "
-                                f"{int(days_left)} days of {med_name} left. "
-                                f"Would you like to add a refill to this order?"
-                            )
-                        else:
-                            prompt = (
-                                f"Before I process your order — your {med_name} might need "
-                                f"a refill soon. Would you like to add it to this order?"
-                            )
-
-                        state["response_message"] = prompt
-                        state["understanding_confidence"] = 0.92
-                        state["final_decision"] = {
-                            "action": "confirm_order",
-                            "combined_confidence": 0.92,
-                            "risk_level": "low",
-                            "needs_clarification": True,
-                            "reasoning": "Refill gate: offering refill before payment",
-                        }
-                        _set_skipped(
-                            steps,
-                            ["safety", "inventory", "execution"],
-                            "Refill prompt gate — awaiting user response",
-                        )
-                        state["pipeline_steps"] = list(steps.values())
-                        logger.info(
-                            "[%s] Refill OFFERED: %s (%s days left)",
-                            trace_id[:8], med_name, days_left,
-                        )
-                        return state
-                    else:
-                        # No eligible refill — mark as checked so we never re-check
-                        pending["refill_offer_status"] = "declined"
-                        state["pending_state"] = pending
-
-                # refill_status in {"accepted", "declined"} → proceed normally
+                # Proceed directly to order execution / payment
 
                 canonical_quote = pending_quote
                 canonical_medicines = canonical_medicines_from_quote(canonical_quote)
@@ -1407,8 +1293,8 @@ async def run_pharmacy_workflow(
                         )
 
                 state["quote"] = canonical_quote
-                # Auto-add to cart on confirmation
-                await _auto_add_to_cart(user_id, canonical_quote, db)
+                # Skip auto-add to cart — chat orders go directly to payment
+                # await _auto_add_to_cart(user_id, canonical_quote, db)
                 intent_items = build_intent_items_from_quote(canonical_quote, confidence=0.92)
                 if intent_items:
                     state["intent"] = {
@@ -1417,7 +1303,7 @@ async def run_pharmacy_workflow(
                         "overall_confidence": 0.92,
                     }
                     state["pending_state"] = pending
-                    state["response_message"] = "Understood. Processing your order now. Items have been added to your cart."
+                    state["response_message"] = "Understood. Processing your order now."
                     state["understanding_confidence"] = max(0.7, confirmation_confidence)
                     state["final_decision"] = {
                         "action": "proceed",
@@ -1458,85 +1344,23 @@ async def run_pharmacy_workflow(
                     state["pipeline_steps"] = list(steps.values())
                     return state
             elif confirmation_intent == "cancel":
-                # Check if this is a decline of a refill offer
-                refill_status = str(pending.get("refill_offer_status", "not_checked") or "not_checked")
-                if refill_status == "offered":
-                    # User declined the refill — mark and proceed to payment
-                    pending["refill_offer_status"] = "declined"
-                    state["pending_state"] = pending
-                    refill_med_name = pending.get("refill_offer_medicine", {}).get("medicine_name", "refill")
-                    logger.info(
-                        "[%s] Refill DECLINED for %s — proceeding to payment",
-                        trace_id[:8], refill_med_name,
-                    )
-                    # Treat as confirmation of the original order
-                    canonical_quote = pending_quote
-                    canonical_medicines = canonical_medicines_from_quote(canonical_quote)
-                    if not can_emit_confirm_order(canonical_quote) and canonical_medicines:
-                        rebuilt_quote = await _quote_from_medicines(canonical_medicines, message=message)
-                        if rebuilt_quote:
-                            canonical_quote = rebuilt_quote
-                            canonical_medicines = canonical_medicines_from_quote(rebuilt_quote)
-                            pending = build_pending_state(
-                                canonical_quote,
-                                canonical_medicines,
-                                awaiting_confirmation=True,
-                                confirmation_prompted_once=True,
-                                last_confirmation_intent="confirm",
-                                last_confirmation_confidence=confirmation_confidence,
-                                refill_offer_status="declined",
-                                refill_offer_medicine=pending.get("refill_offer_medicine", {}),
-                            )
-                    state["quote"] = canonical_quote
-                    await _auto_add_to_cart(user_id, canonical_quote, db)
-                    intent_items = build_intent_items_from_quote(canonical_quote, confidence=0.92)
-                    if intent_items:
-                        state["intent"] = {
-                            "items": intent_items,
-                            "raw_query": message,
-                            "overall_confidence": 0.92,
-                        }
-                        state["pending_state"] = pending
-                        state["response_message"] = "No problem. Processing your original order now."
-                        state["understanding_confidence"] = 0.9
-                        state["final_decision"] = {
-                            "action": "proceed",
-                            "combined_confidence": 0.9,
-                            "risk_level": "low",
-                            "needs_clarification": False,
-                            "reasoning": "Refill declined — proceeding with original order",
-                        }
-                        deterministic_execute = True
-                    else:
-                        state["pending_state"] = pending
-                        state["response_message"] = "No problem. Let me process your order."
-                        state["understanding_confidence"] = 0.9
-                        state["final_decision"] = {
-                            "action": "proceed",
-                            "combined_confidence": 0.9,
-                            "risk_level": "low",
-                            "needs_clarification": False,
-                            "reasoning": "Refill declined — proceeding with original order",
-                        }
-                        deterministic_execute = True
-                else:
-                    # Normal order cancellation
-                    state["pending_state"] = empty_pending_state()
-                    state["response_message"] = (
-                        confirmation_result.get("message")
-                        or "Understood. I will not place this order. Share any new medicine details whenever you are ready."
-                    )
-                    state["understanding_confidence"] = max(0.6, confirmation_confidence)
-                    state["final_decision"] = {
-                        "action": "chat",
-                        "combined_confidence": max(0.6, confirmation_confidence),
-                        "risk_level": "low",
-                        "needs_clarification": False,
-                        "reasoning": "Pending order cancelled by GPT intent classifier",
-                    }
-                    _set_skipped(steps, ["safety", "inventory", "execution"], "Pending order canceled")
-                    state["pipeline_steps"] = list(steps.values())
-                    return state
+                # Order cancellation
+                state["pending_state"] = empty_pending_state()
+                state["response_message"] = (
+                    confirmation_result.get("message")
+                    or "Understood. I will not place this order. Share any new medicine details whenever you are ready."
+                )
+                state["understanding_confidence"] = max(0.6, confirmation_confidence)
+                state["final_decision"] = {
+                    "action": "chat",
+                    "combined_confidence": max(0.6, confirmation_confidence),
+                    "risk_level": "low",
+                    "needs_clarification": False,
+                    "reasoning": "Pending order cancelled by GPT intent classifier",
+                }
+                _set_skipped(steps, ["safety", "inventory", "execution"], "Pending order canceled")
+                state["pipeline_steps"] = list(steps.values())
+                return state
             else:
                 state["pending_state"] = pending
                 state["quote"] = pending_quote
@@ -1751,8 +1575,8 @@ async def run_pharmacy_workflow(
             if gpt_action == "confirm_order":
                 quote = state.get("quote", {})
                 if can_emit_confirm_order(quote):
-                    # Auto-add to cart when showing order confirmation
-                    await _auto_add_to_cart(user_id, quote, db)
+                    # Skip auto-add to cart — chat orders go directly to payment
+                    # await _auto_add_to_cart(user_id, quote, db)
                     gpt_result["message"] = build_confirmation_message(quote, is_voice_mode)
                 elif quote_lines(quote):
                     # Quote exists but quantity unresolved — fall back to chat
