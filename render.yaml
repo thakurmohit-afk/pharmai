@@ -6,13 +6,7 @@ services:
     runtime: python
     region: singapore
     rootDir: backend
-    buildCommand: |
-      pip install -r requirements.txt && python -c "
-      import asyncio
-      from seed_data import seed_database
-      asyncio.run(seed_database())
-      print('Database seeded successfully')
-      "
+    buildCommand: chmod +x build.sh && ./build.sh
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
