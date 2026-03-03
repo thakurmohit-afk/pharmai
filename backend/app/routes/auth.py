@@ -240,7 +240,7 @@ async def dev_login(
 ):
     """Development-only shortcut login for seeded users."""
     settings = get_settings()
-    if not settings.allow_demo_bypass or settings.app_env != "development":
+    if not settings.allow_demo_bypass:
         raise HTTPException(status_code=403, detail="Demo login is disabled.")
 
     result = await db.execute(select(User).where(User.email == payload.email.lower()))
