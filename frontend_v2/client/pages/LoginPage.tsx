@@ -16,7 +16,7 @@ export default function LoginPage() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
 
-    const from = location.state?.from?.pathname || "/";
+    const from = location.state?.from?.pathname || "/workspace";
 
     useEffect(() => {
         const handlePointerMove = (e: PointerEvent) => {
