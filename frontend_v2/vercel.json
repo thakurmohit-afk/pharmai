@@ -1,6 +1,12 @@
 {
     "installCommand": "pnpm install --no-frozen-lockfile",
     "buildCommand": "pnpm run build:client",
-    "outputDirectory": "dist",
-    "framework": "vite"
+    "outputDirectory": "dist/spa",
+    "framework": "vite",
+    "rewrites": [
+        {
+            "source": "/(.*)",
+            "destination": "/index.html"
+        }
+    ]
 }
