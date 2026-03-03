@@ -17,9 +17,6 @@ importers:
       '@splinetool/runtime':
         specifier: ^1.12.58
         version: 1.12.61
-      '@types/canvas-confetti':
-        specifier: ^1.9.0
-        version: 1.9.0
       canvas-confetti:
         specifier: ^1.9.4
         version: 1.9.4
@@ -135,6 +132,9 @@ importers:
       '@tanstack/react-query':
         specifier: ^5.84.2
         version: 5.84.2(react@18.3.1)
+      '@types/canvas-confetti':
+        specifier: ^1.9.0
+        version: 1.9.0
       '@types/cors':
         specifier: ^2.8.19
         version: 2.8.19
