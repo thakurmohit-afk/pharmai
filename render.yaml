@@ -55,7 +55,6 @@ services:
   - type: web
     name: pharmai-app
     runtime: static
-    region: singapore
     plan: free
     rootDir: frontend_v2
     buildCommand: npm install && npm run build
