@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { motion } from "framer-motion";
 import { useLocation, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/context/ThemeContext";
@@ -13,7 +14,9 @@ import {
   UsersRound, Receipt, BrainCircuit, Gauge,
 } from "lucide-react";
 
-const API_BASE = (import.meta.env.VITE_API_BASE || "/api")
+const API_BASE = (import.meta.env.DEV
+  ? (import.meta.env.VITE_API_BASE || "/api")
+  : "/api")
   .replace(/\/api$/, "")
   .replace(/\/$/, "");
 
@@ -83,21 +86,33 @@ export default function Sidebar({ defaultCollapsed = false, transparent = false 
         key={item.path}
         onClick={() => navigate(item.path)}
         className={cn(
-          "h-9 rounded-xl flex items-center transition-all duration-200 overflow-hidden whitespace-nowrap",
+          "relative h-9 rounded-xl flex items-center overflow-hidden whitespace-nowrap",
           "px-[11px] gap-3",
+          "transition-all duration-300 ease-out",
           isActive
             ? theme === "dark"
-              ? "bg-white/10 text-white"
-              : "bg-emerald-50 text-emerald-700 font-medium"
+              ? "text-white"
+              : "text-emerald-700 font-medium"
             : theme === "dark"
               ? "text-gray-500 hover:text-gray-300 hover:bg-white/5"
               : "text-gray-400 hover:text-gray-600 hover:bg-gray-100/80"
         )}
         title={item.label}
       >
-        <item.icon className="w-[18px] h-[18px] stroke-[2] shrink-0" />
+        {/* Liquid active indicator */}
+        {isActive && (
+          <motion.div
+            layoutId="sidebar-active"
+            className={cn(
+              "absolute inset-0 rounded-xl",
+              theme === "dark" ? "bg-white/10" : "bg-emerald-50"
+            )}
+            transition={{ type: "spring", stiffness: 350, damping: 30 }}
+          />
+        )}
+        <item.icon className="w-[18px] h-[18px] stroke-[2] shrink-0 relative z-10" />
         <span className={cn(
-          "text-[13px] font-medium transition-opacity duration-300",
+          "text-[13px] font-medium transition-opacity duration-300 relative z-10",
           collapsed ? "opacity-0" : "opacity-100"
         )}>
           {item.label}
@@ -124,38 +139,35 @@ export default function Sidebar({ defaultCollapsed = false, transparent = false 
     <div
       style={{
         width: collapsed ? 64 : 224,
-        ...(isWorkspace ? {
-          background: "rgba(255,255,255,0.12)",
-          backdropFilter: "blur(20px)",
-          WebkitBackdropFilter: "blur(20px)",
-          borderRight: "1px solid rgba(255,255,255,0.18)",
-        } : {}),
+        background: isWorkspace
+          ? "rgba(255,255,255,0.12)"
+          : theme === "dark" ? "#050505" : "rgba(249,250,251,0.5)",
+        backdropFilter: isWorkspace ? "blur(20px)" : "none",
+        WebkitBackdropFilter: isWorkspace ? "blur(20px)" : "none",
+        borderRight: isWorkspace
+          ? "1px solid rgba(255,255,255,0.18)"
+          : theme === "dark" ? "1px solid rgba(255,255,255,0.05)" : "1px solid #e5e7eb",
+        transition: "width 300ms ease-in-out, background 500ms ease, backdrop-filter 500ms ease, border-right 500ms ease",
       }}
       className={cn(
         "h-screen flex flex-col py-4 justify-between shrink-0 sticky top-0 z-50 overflow-hidden",
-        "transition-[width] duration-300 ease-in-out",
-        !isWorkspace && (
-          theme === "dark"
-            ? "border-r border-white/5 bg-[#050505] text-slate-300"
-            : "border-r border-gray-200 bg-gray-50/50 text-slate-600"
-        ),
-        isWorkspace && "text-slate-700"
+        isWorkspace ? "text-slate-700" : theme === "dark" ? "text-slate-300" : "text-slate-600"
       )}
     >
       {/* Top: Logo + Toggle + Sections */}
-      <div className="flex flex-col w-full overflow-y-auto overflow-x-hidden scrollbar-none">
+      <div className="flex flex-col w-full overflow-y-auto overflow-x-hidden" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
         <div className="px-3 flex flex-col gap-1">
           {/* Logo row */}
           <div className="flex items-center h-10 mb-1">
-            <div
-              className={cn(
-                "w-10 h-10 flex items-center justify-center rounded-xl font-black text-lg shrink-0",
-                theme === "dark"
-                  ? "text-white bg-gradient-to-br from-emerald-500 to-teal-400"
-                  : "text-white bg-gradient-to-br from-emerald-600 to-teal-500"
-              )}
-            >
-              P
+            <div className="w-10 h-10 flex items-center justify-center shrink-0">
+              <img
+                src="/pharmai-logo.png"
+                alt="PharmAI"
+                className={cn(
+                  "w-9 h-9 object-contain mix-blend-multiply",
+                  theme === "dark" && "invert brightness-0"
+                )}
+              />
             </div>
             <span className={cn(
               "text-sm font-bold font-heading ml-3 whitespace-nowrap overflow-hidden transition-opacity duration-300",
@@ -202,22 +214,22 @@ export default function Sidebar({ defaultCollapsed = false, transparent = false 
           </div>
         </div>
 
-        {/* HEALTH section (hidden for admin users) */}
-        {user?.role !== "admin" && (
-          <div className="px-3">
-            {renderSectionLabel("Health")}
-            <div className="flex flex-col gap-0.5">
-              {healthNav.map(renderNavItem)}
-            </div>
-          </div>
-        )}
-
         {/* PHARMACY section (hidden for admin users) */}
         {user?.role !== "admin" && (
           <div className="px-3">
             {renderSectionLabel("Pharmacy")}
             <div className="flex flex-col gap-0.5">
               {pharmacyNav.map(renderNavItem)}
+            </div>
+          </div>
+        )}
+
+        {/* HEALTH section (hidden for admin users) */}
+        {user?.role !== "admin" && (
+          <div className="px-3">
+            {renderSectionLabel("Health")}
+            <div className="flex flex-col gap-0.5">
+              {healthNav.map(renderNavItem)}
             </div>
           </div>
         )}
@@ -237,54 +249,7 @@ export default function Sidebar({ defaultCollapsed = false, transparent = false 
       <div className="flex flex-col gap-1 w-full px-3 mt-2">
         <div className={cn("h-px mb-1", theme === "dark" ? "bg-white/5" : "bg-gray-200")} />
 
-        {/* Profile */}
-        <button
-          onClick={() => navigate("/")}
-          className={cn(
-            "group relative rounded-xl flex items-center transition-colors overflow-hidden whitespace-nowrap",
-            "px-[7px] py-2 gap-3",
-            theme === "dark" ? "hover:bg-white/5" : "hover:bg-gray-100/80"
-          )}
-          title={name}
-        >
-          {avatarSrc ? (
-            <img
-              src={avatarSrc}
-              alt="avatar"
-              className="w-9 h-9 rounded-lg object-cover border border-white/10 shrink-0"
-            />
-          ) : (
-            <div className="w-9 h-9 rounded-lg flex items-center justify-center text-xs font-bold text-white bg-gradient-to-br from-emerald-500 to-teal-400 shrink-0">
-              {initials}
-            </div>
-          )}
 
-          <div className={cn(
-            "min-w-0 text-left transition-opacity duration-300",
-            collapsed ? "opacity-0" : "opacity-100"
-          )}>
-            <p className={cn("text-sm font-semibold truncate", theme === "dark" ? "text-slate-200" : "text-slate-700")}>
-              {name}
-            </p>
-            <p className={cn("text-[11px] truncate", theme === "dark" ? "text-slate-500" : "text-slate-400")}>
-              {profile?.email || user?.email || ""}
-            </p>
-          </div>
-
-          {/* Tooltip (collapsed only) */}
-          <div className={cn(
-            "absolute left-[calc(100%+8px)] px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 pointer-events-none whitespace-nowrap shadow-xl z-50",
-            collapsed ? "opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0" : "opacity-0 pointer-events-none",
-            theme === "dark"
-              ? "bg-slate-800 border border-white/10 text-white"
-              : "bg-white border border-slate-200 text-slate-800 shadow-lg"
-          )}>
-            {name}<br />
-            <span className={theme === "dark" ? "text-slate-400" : "text-slate-500"}>
-              {profile?.email || user?.email || ""}
-            </span>
-          </div>
-        </button>
 
         {/* Theme toggle */}
         <button

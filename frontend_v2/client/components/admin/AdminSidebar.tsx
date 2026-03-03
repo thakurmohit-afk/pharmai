@@ -100,8 +100,15 @@ export default function AdminSidebar({
             <div className={cn("px-5 pt-5 pb-4 border-b", dark ? "border-white/[0.05]" : "border-stone-100")}>
                 <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2.5">
-                        <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg shadow-emerald-500/20">
-                            <Sparkles className="w-3.5 h-3.5 text-white" />
+                        <div className="w-7 h-7 flex items-center justify-center">
+                            <img
+                                src="/pharmai-logo.png"
+                                alt="PharmAI"
+                                className={cn(
+                                    "w-7 h-7 object-contain mix-blend-multiply",
+                                    dark && "invert brightness-0"
+                                )}
+                            />
                         </div>
                         <div>
                             <p className={cn("text-[12px] font-bold tracking-tight", dark ? "text-slate-200" : "text-stone-800")}>

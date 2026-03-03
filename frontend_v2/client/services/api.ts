@@ -1,5 +1,7 @@
 /* API service - centralized HTTP client for the backend */
-const rawBase = import.meta.env.VITE_API_BASE || '/api';
+const rawBase = import.meta.env.DEV
+    ? (import.meta.env.VITE_API_BASE || '/api')
+    : '/api'; // Production: use Vercel proxy rewrite
 const API_BASE = rawBase.endsWith('/') ? rawBase.slice(0, -1) : rawBase;
 let inFlightRefresh: Promise<any> | null = null;
 

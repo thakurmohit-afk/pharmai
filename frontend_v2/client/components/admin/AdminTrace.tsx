@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import {
     Loader2, ArrowLeft, MessageSquare, User, Clock, Zap,
-    CheckCircle2, AlertTriangle, XCircle, ChevronRight, Brain,
+    CheckCircle2, AlertTriangle, XCircle, ChevronRight, ChevronDown, Brain,
     Search, GitBranch, Shield,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -160,6 +160,171 @@ function ThreadList({
     );
 }
 
+/* ── Step Summary Helper ─────────────────────────────────────────── */
+const STEP_DESCRIPTIONS: Record<string, string> = {
+    medicine_search: "Runs vector + lexical hybrid search across the medicine database to find relevant matches for the user's query.",
+    pharmacist: "GPT-based pharmacist reasoning — interprets intent, selects tools, and generates the response message.",
+    profiling: "Loads patient history, past orders, allergies, and preferences to personalize the interaction.",
+    predictive: "Analyzes ordering patterns to predict refill needs and suggest proactive reorders.",
+    safety: "Checks for prescription requirements, contraindications, drug interactions, and dosage limits.",
+    inventory: "Verifies real-time stock availability and resolves pricing for matched medicines.",
+    execution: "Places orders, processes payments, and triggers confirmation emails and webhooks.",
+};
+
+function stepSummaryText(step: any): string {
+    const desc = STEP_DESCRIPTIONS[step.id] || step.description || "";
+    const output = step.output || {};
+    const parts: string[] = [];
+
+    if (desc) parts.push(desc);
+
+    // Add output details
+    if (step.status === "skipped" && output.reason) {
+        parts.push(`Skipped: ${output.reason}`);
+    }
+    if (output.results_count != null) {
+        parts.push(`Found ${output.results_count} result(s).`);
+    }
+    if (output.action) {
+        parts.push(`Action: ${output.action}`);
+    }
+    if (output.decision) {
+        parts.push(`Decision: ${output.decision}`);
+    }
+    if (output.safety_decision) {
+        parts.push(`Safety: ${output.safety_decision}`);
+    }
+    if (output.medicines_found != null) {
+        parts.push(`${output.medicines_found} medicine(s) matched.`);
+    }
+    if (output.order_id) {
+        parts.push(`Order ID: ${output.order_id}`);
+    }
+    if (output.total_amount != null) {
+        parts.push(`Total: ₹${output.total_amount}`);
+    }
+    if (output.warnings?.length) {
+        parts.push(`${output.warnings.length} warning(s) flagged.`);
+    }
+    if (output.refill_suggestions?.length) {
+        parts.push(`${output.refill_suggestions.length} refill suggestion(s).`);
+    }
+    if (output.error) {
+        parts.push(`Error: ${output.error}`);
+    }
+
+    return parts.join(" ") || "No additional details available.";
+}
+
+/* ── Expandable Step List Component ──────────────────────────────── */
+function StepList({ steps, dark }: { steps: any[]; dark: boolean }) {
+    const [expanded, setExpanded] = useState<Set<number>>(new Set());
+
+    const toggle = (idx: number) => {
+        setExpanded(prev => {
+            const next = new Set(prev);
+            if (next.has(idx)) next.delete(idx);
+            else next.add(idx);
+            return next;
+        });
+    };
+
+    return (
+        <div className="space-y-1">
+            {steps.map((step: any, si: number) => {
+                const isOpen = expanded.has(si);
+                return (
+                    <div key={si}>
+                        <button
+                            onClick={() => toggle(si)}
+                            className={cn(
+                                "w-full flex items-center gap-2.5 py-1.5 px-2.5 rounded-lg transition-colors text-left",
+                                dark
+                                    ? "bg-white/[0.02] hover:bg-white/[0.04]"
+                                    : "bg-white/50 hover:bg-white/80"
+                            )}
+                        >
+                            {/* Step number */}
+                            <span className={cn(
+                                "w-4 h-4 rounded text-[9px] font-bold flex items-center justify-center shrink-0",
+                                dark ? "bg-white/[0.06] text-slate-500" : "bg-slate-100 text-slate-400"
+                            )}>
+                                {si + 1}
+                            </span>
+
+                            {/* Status icon */}
+                            {stepStatusIcon(step.status)}
+
+                            {/* Agent name */}
+                            <span className={cn(
+                                "text-xs font-medium flex-1",
+                                dark ? "text-slate-300" : "text-slate-600"
+                            )}>
+                                {step.name || step.id?.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()) || `Step ${si + 1}`}
+                            </span>
+
+                            {/* Duration */}
+                            {step.duration_ms != null && (
+                                <span className={cn(
+                                    "text-[10px] font-mono tabular-nums",
+                                    step.duration_ms > 2000
+                                        ? "text-amber-500"
+                                        : dark ? "text-slate-600" : "text-slate-400"
+                                )}>
+                                    {step.duration_ms}ms
+                                </span>
+                            )}
+
+                            {/* Status badge */}
+                            <span className={cn(
+                                "text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded",
+                                step.status === "completed"
+                                    ? dark ? "bg-emerald-500/10 text-emerald-400" : "bg-emerald-50 text-emerald-600"
+                                    : step.status === "error"
+                                        ? "bg-red-500/10 text-red-500"
+                                        : step.status === "blocked"
+                                            ? "bg-amber-500/10 text-amber-500"
+                                            : dark ? "bg-white/[0.04] text-slate-500" : "bg-slate-100 text-slate-400"
+                            )}>
+                                {step.status}
+                            </span>
+
+                            {/* Expand chevron */}
+                            <ChevronDown className={cn(
+                                "w-3 h-3 shrink-0 transition-transform duration-200",
+                                isOpen ? "rotate-180" : "",
+                                dark ? "text-slate-600" : "text-slate-400"
+                            )} />
+                        </button>
+
+                        {/* Expandable summary */}
+                        <AnimatePresence>
+                            {isOpen && (
+                                <motion.div
+                                    initial={{ height: 0, opacity: 0 }}
+                                    animate={{ height: "auto", opacity: 1 }}
+                                    exit={{ height: 0, opacity: 0 }}
+                                    transition={{ duration: 0.15 }}
+                                    className="overflow-hidden"
+                                >
+                                    <div className={cn(
+                                        "mx-2 mt-0.5 mb-1 px-3 py-2 rounded-lg text-[11px] leading-relaxed",
+                                        dark
+                                            ? "bg-white/[0.03] text-slate-400 border border-white/[0.04]"
+                                            : "bg-slate-50 text-slate-500 border border-slate-100"
+                                    )}>
+                                        {stepSummaryText(step)}
+                                    </div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
+
 /* ── Trace Detail View (CoT) ─────────────────────────────────────── */
 function TraceDetail({
     trace, theme, onBack,
@@ -263,62 +428,7 @@ function TraceDetail({
                                 </div>
 
                                 {/* Pipeline Steps */}
-                                <div className="space-y-1.5">
-                                    {msg.pipeline_steps.map((step: any, si: number) => (
-                                        <div
-                                            key={si}
-                                            className={cn(
-                                                "flex items-center gap-2.5 py-1.5 px-2.5 rounded-lg",
-                                                dark ? "bg-white/[0.02]" : "bg-white/50"
-                                            )}
-                                        >
-                                            {/* Step number */}
-                                            <span className={cn(
-                                                "w-4 h-4 rounded text-[9px] font-bold flex items-center justify-center shrink-0",
-                                                dark ? "bg-white/[0.06] text-slate-500" : "bg-slate-100 text-slate-400"
-                                            )}>
-                                                {si + 1}
-                                            </span>
-
-                                            {/* Status icon */}
-                                            {stepStatusIcon(step.status)}
-
-                                            {/* Agent name */}
-                                            <span className={cn(
-                                                "text-xs font-medium flex-1",
-                                                dark ? "text-slate-300" : "text-slate-600"
-                                            )}>
-                                                {step.name || step.id?.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()) || `Step ${si + 1}`}
-                                            </span>
-
-                                            {/* Duration */}
-                                            {step.duration_ms != null && (
-                                                <span className={cn(
-                                                    "text-[10px] font-mono tabular-nums",
-                                                    step.duration_ms > 2000
-                                                        ? "text-amber-500"
-                                                        : dark ? "text-slate-600" : "text-slate-400"
-                                                )}>
-                                                    {step.duration_ms}ms
-                                                </span>
-                                            )}
-
-                                            {/* Status badge */}
-                                            <span className={cn(
-                                                "text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded",
-                                                step.status === "completed"
-                                                    ? dark ? "bg-emerald-500/10 text-emerald-400" : "bg-emerald-50 text-emerald-600"
-                                                    : step.status === "error"
-                                                        ? "bg-red-500/10 text-red-500"
-                                                        : step.status === "blocked"
-                                                            ? "bg-amber-500/10 text-amber-500"
-                                                            : dark ? "bg-white/[0.04] text-slate-500" : "bg-slate-100 text-slate-400"
-                                            )}>
-                                                {step.status}
-                                            </span>
-                                        </div>
-                                    ))}
-                                </div>
+                                <StepList steps={msg.pipeline_steps} dark={dark} />
 
                                 {/* Summary row */}
                                 <div className={cn(

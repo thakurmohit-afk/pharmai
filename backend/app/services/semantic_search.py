@@ -13,17 +13,21 @@ logger = logging.getLogger("pharmacy.services.semantic_search")
 
 # ── Condition → useful drug categories mapping ────────────────────────────
 CONDITION_CATEGORIES = {
+    "acid reflux": ["Antacid", "PPI", "H2 Blocker", "Prokinetic"],
+    "blood pressure": ["Antihypertensive", "ACE Inhibitor", "ARB", "Calcium Channel Blocker"],
     "headache": ["Analgesic", "Antipyretic", "NSAID"],
     "fever": ["Antipyretic", "Analgesic"],
     "cough": ["Cough Suppressant", "Antitussive", "Expectorant", "Mucolytic"],
     "cold": ["Antihistamine", "Decongestant", "Antipyretic", "Analgesic"],
     "allergy": ["Antihistamine", "Corticosteroid"],
     "diabetes": ["Antidiabetic", "Hypoglycemic"],
-    "blood pressure": ["Antihypertensive", "ACE Inhibitor", "ARB", "Calcium Channel Blocker"],
     "hypertension": ["Antihypertensive", "ACE Inhibitor", "ARB"],
     "pain": ["Analgesic", "NSAID", "Antipyretic"],
     "stomach": ["Antacid", "PPI", "H2 Blocker"],
     "acid": ["Antacid", "PPI", "H2 Blocker"],
+    "reflux": ["Antacid", "PPI", "H2 Blocker", "Prokinetic"],
+    "acidity": ["Antacid", "PPI", "H2 Blocker"],
+    "gastric": ["Antacid", "PPI", "H2 Blocker"],
     "infection": ["Antibiotic", "Antimicrobial"],
     "anxiety": ["Anxiolytic", "SSRI", "Benzodiazepine"],
     "depression": ["Antidepressant", "SSRI"],
@@ -32,7 +36,18 @@ CONDITION_CATEGORIES = {
     "thyroid": ["Thyroid Hormone"],
     "skin": ["Antifungal", "Dermatological", "Corticosteroid"],
     "diarrhea": ["Antidiarrheal", "ORS"],
+    "sore throat": ["Analgesic", "Antibiotic", "Antimicrobial"],
+    "joint pain": ["NSAID", "Analgesic", "Corticosteroid"],
+    "muscle pain": ["Analgesic", "Muscle Relaxant", "NSAID"],
+    "insomnia": ["Sedative", "Anxiolytic"],
+    "nausea": ["Antiemetic", "Prokinetic"],
+    "constipation": ["Laxative"],
+    "vitamin": ["Supplement", "Vitamin"],
 }
+
+# Sort conditions by length descending so multi-word conditions are matched first
+_SORTED_CONDITIONS = sorted(CONDITION_CATEGORIES.keys(), key=len, reverse=True)
+
 
 # ── Avoidance keywords → fields to check ──────────────────────────────────
 AVOIDANCE_MAP = {
@@ -64,10 +79,14 @@ def _parse_intent(query: str) -> dict:
         "keywords": [],
     }
 
-    # Detect conditions
-    for condition, categories in CONDITION_CATEGORIES.items():
-        if condition in q:
+    # Detect conditions — multi-word conditions first (sorted longest→shortest)
+    remaining_q = q
+    for condition in _SORTED_CONDITIONS:
+        if condition in remaining_q:
             intent["conditions"].append(condition)
+            # Strip matched condition from remaining text so its words
+            # don't end up as independent keywords
+            remaining_q = remaining_q.replace(condition, " ")
 
     # Detect avoidance preferences
     avoidance_phrases = ["without", "no ", "avoid", "not ", "free from"]
@@ -81,11 +100,18 @@ def _parse_intent(query: str) -> dict:
     if any(w in q for w in ["otc", "over the counter", "without prescription", "no prescription"]):
         intent["otc_only"] = True
 
-    # Extract search keywords (remove stop words)
-    stop_words = {"for", "a", "the", "and", "or", "with", "without", "that", "which", "is",
-                  "safe", "good", "best", "medicine", "tablet", "drug", "patient", "me", "my",
-                  "no", "not", "avoid", "free", "from", "of", "in", "to", "can", "i", "need"}
-    intent["keywords"] = [w for w in re.split(r'\s+', q) if w not in stop_words and len(w) > 2]
+    # Extract search keywords from the remaining text (after conditions stripped)
+    stop_words = {
+        "for", "a", "the", "and", "or", "with", "without", "that", "which", "is",
+        "safe", "good", "best", "medicine", "tablet", "drug", "patient", "me", "my",
+        "no", "not", "avoid", "free", "from", "of", "in", "to", "can", "i", "need",
+        "don't", "doesn't", "that's", "it's", "what's", "what", "some",
+        "take", "give", "get", "want", "looking", "any", "also",
+    }
+    intent["keywords"] = [
+        w for w in re.split(r'\s+', remaining_q)
+        if w not in stop_words and len(w) > 2
+    ]
 
     return intent
 
@@ -113,10 +139,10 @@ async def semantic_search(
                 user_conditions = list(profile.chronic_conditions.keys())
 
     # Build medicine query
-    filters = []
+    keyword_filters = []
     if intent["keywords"]:
         for kw in intent["keywords"]:
-            filters.append(or_(
+            keyword_filters.append(or_(
                 Medicine.name.ilike("%" + kw + "%"),
                 Medicine.generic_name.ilike("%" + kw + "%"),
                 Medicine.salt.ilike("%" + kw + "%"),
@@ -124,17 +150,27 @@ async def semantic_search(
                 Medicine.category.ilike("%" + kw + "%"),
             ))
 
-    if intent["otc_only"]:
-        filters.append(Medicine.prescription_required == False)
+    # Category-based filters from detected conditions
+    category_filters = []
+    for condition in intent["conditions"]:
+        relevant_cats = CONDITION_CATEGORIES.get(condition, [])
+        for cat in relevant_cats:
+            category_filters.append(Medicine.category.ilike("%" + cat + "%"))
+
+    # Combine: keyword matches OR category matches (any match is enough)
+    all_search_filters = keyword_filters + category_filters
 
     stmt = select(Medicine, Inventory).outerjoin(
         Inventory, Medicine.medicine_id == Inventory.medicine_id
     ).where(Medicine.is_active == True)
 
-    if filters:
-        stmt = stmt.where(*filters)
+    if intent["otc_only"]:
+        stmt = stmt.where(Medicine.prescription_required == False)
 
-    stmt = stmt.limit(limit * 2)  # fetch more for ranking
+    if all_search_filters:
+        stmt = stmt.where(or_(*all_search_filters))
+
+    stmt = stmt.limit(limit * 3)  # fetch more for ranking
 
     result = await db.execute(stmt)
     rows = result.all()

@@ -35,8 +35,6 @@ def empty_pending_state() -> dict:
         "last_confirmation_confidence": 0.0,
         "payment_requested": False,
         "payment_order_id": "",
-        "refill_offer_status": "not_checked",
-        "refill_offer_medicine": {},
     }
 
 
@@ -84,15 +82,6 @@ def normalize_pending_state(raw: dict | None) -> dict:
         confirmation_prompted_once = False
         quote_sig = ""
 
-    # Refill offer state — tracked to prevent loops
-    refill_offer_status = str(
-        raw.get("refill_offer_status", meta.get("refill_offer_status", "not_checked")) or "not_checked"
-    )
-    if refill_offer_status not in {"not_checked", "offered", "accepted", "declined"}:
-        refill_offer_status = "not_checked"
-    refill_offer_medicine = raw.get("refill_offer_medicine", meta.get("refill_offer_medicine", {}))
-    if not isinstance(refill_offer_medicine, dict):
-        refill_offer_medicine = {}
 
     return {
         "pending_quote": sanitized_quote,
@@ -110,8 +99,6 @@ def normalize_pending_state(raw: dict | None) -> dict:
         ),
         "payment_requested": bool(raw.get("payment_requested", meta.get("payment_requested", False))),
         "payment_order_id": str(raw.get("payment_order_id", meta.get("payment_order_id", "")) or ""),
-        "refill_offer_status": refill_offer_status,
-        "refill_offer_medicine": refill_offer_medicine,
     }
 
 
@@ -126,8 +113,6 @@ def build_pending_state(
     confirmation_prompted_once: bool = False,
     last_confirmation_intent: str = "",
     last_confirmation_confidence: float = 0.0,
-    refill_offer_status: str = "not_checked",
-    refill_offer_medicine: dict | None = None,
 ) -> dict:
     """Construct a fresh pending state from a quote and medicines list."""
     if not isinstance(quote, dict) or not isinstance(medicines, list) or not medicines:
@@ -142,8 +127,6 @@ def build_pending_state(
         "quote_signature": build_quote_signature(quote),
         "last_confirmation_intent": str(last_confirmation_intent or ""),
         "last_confirmation_confidence": safe_float(last_confirmation_confidence or 0.0, 0.0),
-        "refill_offer_status": refill_offer_status if refill_offer_status in {"not_checked", "offered", "accepted", "declined"} else "not_checked",
-        "refill_offer_medicine": refill_offer_medicine or {},
     }
 
 

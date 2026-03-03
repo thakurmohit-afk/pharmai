@@ -70,10 +70,10 @@ export default function StatsCardsRow({ dashboard }: StatsCardsRowProps) {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: idx * 0.06, type: "spring", stiffness: 200 }}
             className={cn(
-              "rounded-2xl p-4 flex flex-col gap-3 transition-all",
+              "glass-card p-4 flex flex-col gap-3 transition-all",
               theme === "dark"
-                ? "bg-slate-900/60 border border-white/5 hover:border-white/10"
-                : "bg-white border border-slate-100 premium-shadow hover:shadow-md"
+                ? "hover:border-white/10"
+                : "hover:shadow-md"
             )}
           >
             <div className={cn("w-9 h-9 rounded-xl flex items-center justify-center", stat.bg)}>
@@ -97,10 +97,10 @@ export default function StatsCardsRow({ dashboard }: StatsCardsRowProps) {
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.36, type: "spring", stiffness: 200 }}
         className={cn(
-          "rounded-2xl p-4 flex flex-col items-center justify-center gap-2 transition-all",
+          "glass-card p-4 flex flex-col items-center justify-center gap-2 transition-all",
           theme === "dark"
-            ? "bg-slate-900/60 border border-white/5 hover:border-white/10"
-            : "bg-white border border-slate-100 premium-shadow hover:shadow-md"
+            ? "hover:border-white/10"
+            : "hover:shadow-md"
         )}
       >
         <div className="relative">

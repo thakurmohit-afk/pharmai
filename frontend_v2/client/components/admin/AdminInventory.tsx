@@ -313,6 +313,14 @@ export default function AdminInventory() {
                     )}>
                       Threshold: {item.min_stock_threshold} {item.unit_type}
                     </p>
+                    {item.price > 0 && (
+                      <p className={cn(
+                        "text-xs font-semibold mt-1",
+                        theme === "dark" ? "text-emerald-400" : "text-emerald-600"
+                      )}>
+                        ₹{item.price.toFixed(2)}
+                      </p>
+                    )}
                   </div>
                   <Badge variant="outline" className={cn("text-[10px] capitalize shrink-0", statusBadgeClass(item.status))}>
                     {item.status}

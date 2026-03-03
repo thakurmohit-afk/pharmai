@@ -330,7 +330,7 @@ export default function ChatArea({
                     "w-9 h-9 rounded-xl flex items-center justify-center",
                     theme === "dark" ? "bg-emerald-500/10" : "bg-emerald-50"
                   )}>
-                    <Sparkles className="w-4 h-4 text-emerald-500" />
+                    <img src="/pharmai-logo.png" alt="PharmAI" className="w-5 h-5 object-contain" />
                   </div>
                   <span className={cn(
                     "text-xl font-medium tracking-tight",
@@ -479,10 +479,10 @@ export default function ChatArea({
               {/* Input pill */}
               <div
                 className={cn(
-                  "flex-1 flex items-center gap-3 rounded-2xl px-5 py-3 transition-all duration-200",
+                  "flex-1 flex items-center gap-3 rounded-2xl px-5 py-3 transition-all duration-200 chat-input-morph",
                   theme === "dark"
                     ? "bg-white/[0.04] border border-white/[0.08] focus-within:border-white/[0.15]"
-                    : "bg-stone-50 border border-stone-200/80 focus-within:border-emerald-400 focus-within:ring-2 focus-within:ring-emerald-100 shadow-sm"
+                    : "bg-stone-50 border border-stone-200/80 focus-within:border-emerald-400 shadow-sm"
                 )}
               >
                 <input
@@ -746,7 +746,7 @@ function AssistantMessage({
           "w-8 h-8 flex-shrink-0 rounded-xl flex items-center justify-center mt-1",
           theme === "dark" ? "bg-emerald-500/10" : "bg-emerald-50"
         )}>
-          <Sparkles className="w-4 h-4 text-emerald-500" />
+          <img src="/pharmai-logo.png" alt="PharmAI" className="w-5 h-5 object-contain" />
         </div>
 
         {/* Content + Cards */}

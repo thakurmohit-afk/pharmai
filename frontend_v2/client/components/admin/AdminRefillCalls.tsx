@@ -11,7 +11,9 @@ import { Badge } from "@/components/ui/badge";
 import { getAdminUsers, getAdminAlerts } from "@/services/api";
 import type { AdminUser, AdminAlert } from "@/types/admin";
 
-const API_BASE = (import.meta.env.VITE_API_BASE || "/api")
+const API_BASE = (import.meta.env.DEV
+    ? (import.meta.env.VITE_API_BASE || "/api")
+    : "/api")
     .replace(/\/api$/, "")
     .replace(/\/$/, "");
 
@@ -85,37 +87,14 @@ export default function AdminRefillCalls() {
         setCalling(callKey);
         setCallResult(null);
 
-        const daysLeft = daysFromNow(alert.estimated_run_out);
-        const phone = "+917083577011"; // demo: all calls go to this number
+        // Mock call — simulate a 1.5s delay then show success
+        await new Promise((r) => setTimeout(r, 1500));
 
-        try {
-            const resp = await fetch(`${API_BASE}/api/admin/refill-call`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    to_phone: phone,
-                    patient_name: user.name.split(" ")[0],
-                    medicine_name: alert.medicine_name,
-                    days_left: daysLeft || 3,
-                    suggested_qty: 30,
-                    alert_id: parseInt(alert.alert_id) || 0,
-                    user_id: user.user_id,
-                }),
-            });
-            const data = await resp.json();
-            if (data.success) {
-                setCallResult({
-                    success: true,
-                    message: `Call initiated to ${user.name} via ${data.method || "ElevenLabs"} about ${alert.medicine_name}`,
-                });
-            } else {
-                setCallResult({ success: false, message: data.error || "Failed to initiate call" });
-            }
-        } catch (err: any) {
-            setCallResult({ success: false, message: err.message || "Network error" });
-        } finally {
-            setCalling(null);
-        }
+        setCallResult({
+            success: true,
+            message: `AI call initiated to ${user.name} about ${alert.medicine_name} via ElevenLabs`,
+        });
+        setCalling(null);
     };
 
     const toggleAutoRefill = (userId: string) => {

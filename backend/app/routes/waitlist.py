@@ -217,14 +217,27 @@ async def admin_restock(
 
     notifications_sent = 0
     for entry in waitlist_entries:
-        # In production: send actual email/WhatsApp using SendGrid/Twilio
-        # For demo: log and mark as notified
-        logger.info(
-            "NOTIFICATION SENT: User %s notified via %s that %s is back in stock!",
-            entry.user_id,
-            entry.notification_method,
-            medicine.name,
-        )
+        # Load user to get email
+        user = entry.user
+        if user and user.email:
+            try:
+                from app.services.email_service import send_restock_notification_email
+                await send_restock_notification_email(
+                    to=user.email,
+                    user_name=user.name or "there",
+                    medicine_name=medicine.name,
+                )
+                logger.info(
+                    "Restock email sent to %s (%s) for %s",
+                    user.email, user.name, medicine.name,
+                )
+            except Exception as email_err:
+                logger.warning("Failed to send restock email to %s: %s", user.email, email_err)
+        else:
+            logger.info(
+                "NOTIFICATION: User %s waitlisted for %s (no email on file)",
+                entry.user_id, medicine.name,
+            )
         entry.status = "notified"
         entry.notified_at = datetime.now(timezone.utc)
         notifications_sent += 1

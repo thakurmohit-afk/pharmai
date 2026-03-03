@@ -1,30 +1,28 @@
-import { Search, Bell, LogOut, Settings, User as UserIcon } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Search, ShoppingCart } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { useTheme } from "@/context/ThemeContext";
-import { useAuth } from "@/context/AuthContext";
 import { cn } from "@/lib/utils";
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuLabel,
-    DropdownMenuSeparator,
-    DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { getCart } from "@/services/api";
 
 interface TopNavbarProps {
-    onOpenProfileDrawer: () => void;
+    onOpenProfileDrawer?: () => void;
+    onOpenCart?: () => void;
     profile?: any;
 }
 
-export default function TopNavbar({ onOpenProfileDrawer, profile }: TopNavbarProps) {
+export default function TopNavbar({ onOpenCart, profile }: TopNavbarProps) {
     const { theme } = useTheme();
-    const { logout } = useAuth();
+    const navigate = useNavigate();
+    const [cartCount, setCartCount] = useState(0);
 
-    // Fallbacks
-    const name = profile?.name || "User";
-    const email = profile?.email || "";
-    const role = profile?.role === "admin" ? "Pharmacy Admin" : "Patient";
-    const initials = name.split(" ").map((n: string) => n[0]).join("").substring(0, 2).toUpperCase() || "US";
+    const handleCartClick = onOpenCart ?? (() => navigate("/cart"));
+
+    useEffect(() => {
+        getCart()
+            .then((data: any) => setCartCount(data?.item_count || 0))
+            .catch(() => { });
+    }, []);
 
     return (
         <header
@@ -38,7 +36,7 @@ export default function TopNavbar({ onOpenProfileDrawer, profile }: TopNavbarPro
             {/* Left side: Context/Search */}
             <div className="flex items-center gap-8 flex-1">
                 <h1 className="text-xl font-heading font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-teal-400">
-                    PharmaDash
+                    PharmAI
                 </h1>
 
                 <div className="relative w-full max-w-md hidden md:block">
@@ -53,66 +51,38 @@ export default function TopNavbar({ onOpenProfileDrawer, profile }: TopNavbarPro
                                 ? "bg-slate-900 border-slate-800 text-white placeholder-slate-500"
                                 : "bg-slate-50 border-slate-200 text-slate-900 placeholder-slate-400"
                         )}
-                        placeholder="Search patients, meds, or orders... (⌘K)"
+                        placeholder="Search medicines, orders... (⌘K)"
                     />
                 </div>
             </div>
 
-            {/* Right side: Actions */}
-            <div className="flex items-center gap-4">
-                {/* Notifications */}
+            {/* Right side: Cart */}
+            <div className="flex items-center gap-3">
                 <button
+                    onClick={handleCartClick}
                     className={cn(
-                        "relative p-2 rounded-full transition-colors",
+                        "relative flex items-center gap-2.5 px-4 py-2 rounded-xl transition-all duration-200 group",
                         theme === "dark"
-                            ? "text-slate-400 hover:text-white hover:bg-slate-800"
-                            : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"
+                            ? "bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-slate-300 hover:text-white"
+                            : "bg-slate-50 hover:bg-slate-100 border border-slate-200/80 text-slate-600 hover:text-slate-900"
                     )}
+                    title="Shopping Cart"
                 >
-                    <Bell className="w-5 h-5" />
+                    <div className="relative">
+                        <ShoppingCart className="w-[18px] h-[18px] transition-transform group-hover:scale-105" />
+                        {cartCount > 0 && (
+                            <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 flex items-center justify-center text-[10px] font-bold text-white bg-emerald-500 rounded-full shadow-sm">
+                                {cartCount > 9 ? "9+" : cartCount}
+                            </span>
+                        )}
+                    </div>
+                    <span className={cn(
+                        "text-sm font-semibold hidden sm:block",
+                        theme === "dark" ? "text-slate-300" : "text-slate-700"
+                    )}>
+                        Cart
+                    </span>
                 </button>
-
-                {/* Profile Dropdown */}
-                <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                        <button className="flex items-center gap-3 focus:outline-none">
-                            <div className="text-right hidden sm:block">
-                                <p className="text-sm font-semibold leading-tight">{name}</p>
-                                <p className={cn("text-xs", theme === "dark" ? "text-slate-400" : "text-slate-500")}>
-                                    {role}
-                                </p>
-                            </div>
-                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-teal-500 flex items-center justify-center text-white font-bold premium-shadow border border-white/10">
-                                {initials}
-                            </div>
-                        </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent
-                        align="end"
-                        className={cn("w-56 rounded-xl", theme === "dark" && "border-white/10 bg-slate-900")}
-                    >
-                        <DropdownMenuLabel className="font-normal">
-                            <div className="flex flex-col space-y-1">
-                                <p className="text-sm font-medium leading-none">{name}</p>
-                                <p className="text-xs leading-none text-muted-foreground">{email}</p>
-                            </div>
-                        </DropdownMenuLabel>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem onClick={onOpenProfileDrawer} className="cursor-pointer">
-                            <UserIcon className="mr-2 h-4 w-4" />
-                            <span>My Profile</span>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem className="cursor-pointer hidden">
-                            <Settings className="mr-2 h-4 w-4" />
-                            <span>Settings</span>
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem onClick={logout} className="cursor-pointer text-destructive focus:text-destructive focus:bg-destructive/10">
-                            <LogOut className="mr-2 h-4 w-4" />
-                            <span>Log out</span>
-                        </DropdownMenuItem>
-                    </DropdownMenuContent>
-                </DropdownMenu>
             </div>
         </header>
     );

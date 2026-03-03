@@ -1,4 +1,5 @@
-import { Plus, Trash2, PanelLeftClose } from "lucide-react";
+import { useState } from "react";
+import { Plus, Trash2, PanelLeftClose, ChevronDown, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface ChatSidebarProps {
@@ -11,7 +12,8 @@ interface ChatSidebarProps {
 
 export default function ChatSidebar({ activeId, onSelect, onDelete, threads, onToggle }: ChatSidebarProps) {
   const recent = threads.slice(0, 5);
-  const last7 = threads.slice(5);
+  const older = threads.slice(5);
+  const [olderExpanded, setOlderExpanded] = useState(false);
 
   return (
     <div className="w-60 flex-shrink-0 flex flex-col h-full bg-white/80 backdrop-blur-xl border-r border-stone-200/60">
@@ -41,7 +43,7 @@ export default function ChatSidebar({ activeId, onSelect, onDelete, threads, onT
       </div>
 
       {/* Conversations */}
-      <div className="flex-1 overflow-y-auto px-3 pb-4">
+      <div className="flex-1 overflow-y-auto px-3 pb-4" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
         {threads.length > 0 && (
           <div className="mb-2 px-2 mt-2">
             <span className="text-[10px] font-semibold text-stone-400 uppercase tracking-wider">
@@ -61,24 +63,34 @@ export default function ChatSidebar({ activeId, onSelect, onDelete, threads, onT
           ))}
         </ul>
 
-        {last7.length > 0 && (
+        {older.length > 0 && (
           <>
-            <div className="mb-2 px-2 mt-4">
-              <span className="text-[10px] font-semibold text-stone-400 uppercase tracking-wider">
-                Older
+            <button
+              onClick={() => setOlderExpanded(!olderExpanded)}
+              className="flex items-center gap-1.5 mb-2 px-2 mt-4 w-full text-left group"
+            >
+              {olderExpanded ? (
+                <ChevronDown className="w-3 h-3 text-stone-400" />
+              ) : (
+                <ChevronRight className="w-3 h-3 text-stone-400" />
+              )}
+              <span className="text-[10px] font-semibold text-stone-400 uppercase tracking-wider group-hover:text-stone-600 transition-colors">
+                Older ({older.length})
               </span>
-            </div>
-            <ul className="space-y-0.5">
-              {last7.map((conv) => (
-                <ConversationItem
-                  key={conv.id}
-                  conv={conv}
-                  isActive={activeId === conv.id}
-                  onSelect={onSelect}
-                  onDelete={onDelete}
-                />
-              ))}
-            </ul>
+            </button>
+            {olderExpanded && (
+              <ul className="space-y-0.5">
+                {older.map((conv) => (
+                  <ConversationItem
+                    key={conv.id}
+                    conv={conv}
+                    isActive={activeId === conv.id}
+                    onSelect={onSelect}
+                    onDelete={onDelete}
+                  />
+                ))}
+              </ul>
+            )}
           </>
         )}
       </div>

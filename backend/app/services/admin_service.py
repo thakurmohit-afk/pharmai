@@ -48,14 +48,14 @@ async def get_all_alerts(db: AsyncSession) -> list[dict]:
 async def get_inventory_status(db: AsyncSession) -> list[dict]:
     """Get all inventory items with color-coded status (ok/low/critical)."""
     result = await db.execute(
-        select(Inventory, Medicine.name)
+        select(Inventory, Medicine.name, Medicine.price)
         .join(Medicine, Inventory.medicine_id == Medicine.medicine_id)
         .order_by(Medicine.name)
     )
     rows = result.all()
 
     items = []
-    for inv, med_name in rows:
+    for inv, med_name, med_price in rows:
         threshold = inv.min_stock_threshold or 20
         stock = inv.stock_quantity
 
@@ -75,6 +75,7 @@ async def get_inventory_status(db: AsyncSession) -> list[dict]:
             "stock_quantity": stock,
             "min_stock_threshold": threshold,
             "unit_type": inv.unit_type,
+            "price": round(med_price or 0, 2),
             "status": status,
         })
 

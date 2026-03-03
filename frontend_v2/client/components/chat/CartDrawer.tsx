@@ -3,9 +3,14 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
     ShoppingCart, Plus, Minus, Trash2, CreditCard, Package, X, ShoppingBag,
 } from "lucide-react";
+import confetti from "canvas-confetti";
 import { useTheme } from "@/context/ThemeContext";
 import { cn } from "@/lib/utils";
 import { getCart, updateCartItem, removeCartItem, clearCart, checkoutCart } from "@/services/api";
+
+declare global {
+    interface Window { Razorpay: any; }
+}
 
 interface CartItemData {
     item_id: string;
@@ -86,6 +91,47 @@ export default function CartDrawer({ open, onClose, onCheckoutSuccess }: CartDra
         try {
             setCheckingOut(true);
             const result = await checkoutCart();
+
+            // If Razorpay is configured and SDK is loaded, open payment modal
+            if (result?.razorpay_order_id && result?.key_id && window.Razorpay) {
+                const rzpOptions = {
+                    key: result.key_id,
+                    amount: Math.round((result.amount || 0) * 100),
+                    currency: result.currency || "INR",
+                    name: "PharmAI",
+                    description: "Medicine Order",
+                    order_id: result.razorpay_order_id,
+                    handler: async (response: any) => {
+                        try {
+                            const { verifyPayment } = await import("@/services/api");
+                            await verifyPayment({
+                                razorpay_order_id: response.razorpay_order_id,
+                                razorpay_payment_id: response.razorpay_payment_id,
+                                razorpay_signature: response.razorpay_signature,
+                                payment_method: "card",
+                            });
+                        } catch (err) {
+                            console.error("Payment verification failed:", err);
+                        }
+                        setCart({ cart_id: cart?.cart_id || "", item_count: 0, total_amount: 0, items: [] });
+                        confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 }, colors: ["#10b981", "#14b8a6", "#34d399", "#6ee7b7"] });
+                        onCheckoutSuccess?.(result);
+                        onClose();
+                    },
+                    modal: {
+                        ondismiss: () => {
+                            // User closed the Razorpay modal without paying
+                            setCheckingOut(false);
+                        },
+                    },
+                    theme: { color: "#10b981" },
+                };
+                const rzp = new window.Razorpay(rzpOptions);
+                rzp.open();
+                return; // Don't setCheckingOut(false) — Razorpay modal handles it
+            }
+
+            // Fallback: no Razorpay, just complete directly
             setCart({ cart_id: cart?.cart_id || "", item_count: 0, total_amount: 0, items: [] });
             onCheckoutSuccess?.(result);
             onClose();

@@ -17,6 +17,13 @@ import re
 import httpx
 from urllib.parse import quote_plus
 
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.database import async_session_factory
+from app.models.medicine import Medicine
+from app.models.inventory import Inventory
+
 from fastapi import APIRouter, Request, Form, Query
 from fastapi.responses import Response
 from twilio.twiml.voice_response import VoiceResponse, Gather
@@ -63,6 +70,27 @@ async def trigger_refill_call(request: Request):
     user_id = body.get("user_id", "")
     webhook_base_url = body.get("webhook_base_url", "")
 
+    # ── Look up medicine details (price, dosage) from DB ──
+    medicine_price = 0.0
+    medicine_dosage = ""
+    medicine_stock = 0
+    try:
+        async with async_session_factory() as db:
+            result = await db.execute(
+                select(Medicine, Inventory)
+                .outerjoin(Inventory, Medicine.medicine_id == Inventory.medicine_id)
+                .where(Medicine.name.ilike(f"%{medicine_name}%"))
+                .limit(1)
+            )
+            row = result.first()
+            if row:
+                med, inv = row
+                medicine_price = float(med.price or 0)
+                medicine_dosage = med.dosage or ""
+                medicine_stock = inv.stock_quantity if inv else 0
+    except Exception as e:
+        logger.warning("Failed to look up medicine details: %s", e)
+
     if not to_phone:
         return {"error": "to_phone is required"}
 
@@ -79,14 +107,30 @@ async def trigger_refill_call(request: Request):
                 suggested_qty=suggested_qty,
                 alert_id=alert_id,
                 user_id=user_id,
+                price=medicine_price,
+                dosage=medicine_dosage,
             )
             return {"success": True, "method": "elevenlabs", **result}
         except Exception as e:
             logger.warning("ElevenLabs call failed, falling back to Polly: %s", e)
 
     # ── Fallback: Twilio + Polly ──
+    # Auto-detect ngrok URL if webhook_base_url not provided
     if not webhook_base_url:
-        return {"error": "ElevenLabs call failed and webhook_base_url not provided for Polly fallback"}
+        try:
+            async with httpx.AsyncClient(timeout=5) as ngrok_client:
+                ngrok_resp = await ngrok_client.get("http://127.0.0.1:4040/api/tunnels")
+                tunnels = ngrok_resp.json().get("tunnels", [])
+                for t in tunnels:
+                    if t.get("proto") == "https":
+                        webhook_base_url = t["public_url"]
+                        logger.info("Auto-detected ngrok URL: %s", webhook_base_url)
+                        break
+        except Exception:
+            logger.warning("Could not auto-detect ngrok URL")
+
+    if not webhook_base_url:
+        return {"error": "ElevenLabs call failed and no ngrok tunnel found for Polly fallback"}
 
     result = initiate_refill_call(
         to_phone=to_phone,
@@ -279,6 +323,8 @@ async def _elevenlabs_outbound_call(
     suggested_qty: int,
     alert_id: int,
     user_id: str,
+    price: float = 0.0,
+    dosage: str = "",
 ) -> dict:
     """Make an outbound call using ElevenLabs Conversational AI API."""
     s = get_settings()
@@ -286,13 +332,33 @@ async def _elevenlabs_outbound_call(
     # First, get the phone number ID from ElevenLabs
     phone_number_id = await _get_elevenlabs_phone_number_id()
 
+    # Build dosage and price info for natural speech
+    dosage_part = f" {dosage}" if dosage else ""
+    price_part = f" at just {int(price)} rupees per strip" if price > 0 else ""
+    dose_suggestion = ""
+    if dosage:
+        dose_suggestion = f" The recommended dose is {dosage}, as prescribed by your doctor."
+
     # Build the first message with patient context
     first_message = (
         f"Hello {patient_name}! This is PharmAI, your pharmacy assistant. "
-        f"I'm calling because your supply of {medicine_name} is running low, "
+        f"I'm calling because your supply of {medicine_name}{dosage_part} is running low, "
         f"with about {days_left} days remaining. "
-        f"We'd recommend ordering a {suggested_qty} day supply. "
+        f"We'd recommend ordering {suggested_qty} tablets{price_part}."
+        f"{dose_suggestion} "
         f"Would you like me to place that refill order for you?"
+    )
+
+    # Build refill system prompt so the agent knows its role
+    refill_prompt = (
+        f"You are PharmAI, a friendly AI pharmacy assistant making an outbound refill call. "
+        f"The patient's name is {patient_name}. "
+        f"Their medication {medicine_name} ({dosage or 'as prescribed'}) is running low with {days_left} days left. "
+        f"You are suggesting they order {suggested_qty} tablets"
+        f"{f' at {int(price)} rupees' if price > 0 else ''}. "
+        f"Be warm, concise, and helpful. If they confirm, tell them a payment link will be sent to their email. "
+        f"If they want a different quantity, acknowledge it. If they decline, be polite. "
+        f"Keep responses short — this is a phone call, not a chat."
     )
 
     # Make the outbound call via ElevenLabs API
@@ -308,11 +374,21 @@ async def _elevenlabs_outbound_call(
                 "agent_phone_number_id": phone_number_id,
                 "to_number": to_phone,
                 "conversation_initiation_client_data": {
+                    "conversation_config_override": {
+                        "agent": {
+                            "prompt": {
+                                "prompt": refill_prompt,
+                            },
+                            "first_message": first_message,
+                        },
+                    },
                     "dynamic_variables": {
                         "patient_name": patient_name,
                         "medication_name": medicine_name,
                         "days_left": str(days_left),
                         "refill_quantity": str(suggested_qty),
+                        "price": str(int(price)) if price > 0 else "N/A",
+                        "dosage": dosage or "as prescribed",
                     },
                 },
             },
@@ -390,14 +466,37 @@ async def refill_voice_webhook(
         f"&user_id={user_id}"
     )
 
+    # Look up price and dosage for Polly fallback too
+    polly_price = 0.0
+    polly_dosage = ""
+    try:
+        async with async_session_factory() as db:
+            result = await db.execute(
+                select(Medicine, Inventory)
+                .outerjoin(Inventory, Medicine.medicine_id == Inventory.medicine_id)
+                .where(Medicine.name.ilike(f"%{medicine_name}%"))
+                .limit(1)
+            )
+            row = result.first()
+            if row:
+                med, inv = row
+                polly_price = float(med.price or 0)
+                polly_dosage = med.dosage or ""
+    except Exception:
+        pass
+
+    price_text = f" at {int(polly_price)} rupees" if polly_price > 0 else ""
+    dose_text = f" The recommended dose is {polly_dosage}." if polly_dosage else ""
+
     gather = Gather(
         input="speech dtmf", action=action_url, method="POST",
         language="en-IN", speech_timeout="3", timeout=8, num_digits=1,
     )
     gather.say(
-        f"Hello {patient_name}! This is PharmAI. "
-        f"Your supply of {medicine_name} is running low with {days_left} days left. "
-        f"We recommend a {suggested_qty} day refill. "
+        f"Hello {patient_name}! This is PharmAI, your smart pharmacy assistant. "
+        f"Your supply of {medicine_name} is running low with only {days_left} days left. "
+        f"We recommend ordering {suggested_qty} tablets{price_text}."
+        f"{dose_text} "
         f"Press 1 to confirm, 2 to decline, or say a quantity.",
         voice="Polly.Aditi", language="en-IN",
     )

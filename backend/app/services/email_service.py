@@ -1,6 +1,5 @@
 """Async email service — Gmail SMTP with professional HTML templates."""
 
-import asyncio
 import logging
 from datetime import datetime
 from email.mime.multipart import MIMEMultipart
@@ -257,6 +256,45 @@ async def send_refill_alert_email(
 
     subject = f"Refill Reminder: {medicine_name} | PharmAI"
     preview = f"Your {medicine_name} supply runs out in ~{days_left} days."
+    html = _base_template(content, preview)
+
+    return await _send_email(to, subject, html)
+
+
+# ── Restock Notification Email ───────────────────────────────────────────────
+
+async def send_restock_notification_email(
+    to: str,
+    user_name: str,
+    medicine_name: str,
+) -> bool:
+    """Send an email notifying user that a waitlisted medicine is back in stock."""
+
+    content = f"""\
+<!-- Success icon -->
+<div style="text-align:center;margin-bottom:20px;">
+  <div style="display:inline-block;width:56px;height:56px;border-radius:50%;background-color:#ecfdf5;line-height:56px;text-align:center;">
+    <span style="font-size:28px;color:#10b981;">&#10003;</span>
+  </div>
+</div>
+
+<h1 style="margin:0 0 6px;font-size:22px;font-weight:700;color:#0f172a;text-align:center;">Good News!</h1>
+<p style="margin:0 0 24px;font-size:14px;color:#64748b;text-align:center;">
+  Hi {user_name}, <strong style="color:#0f172a;">{medicine_name}</strong> is now back in stock!
+</p>
+
+<div style="background-color:#f0fdfa;border:1px solid #99f6e4;border-radius:8px;padding:16px 20px;text-align:center;margin-bottom:20px;">
+  <p style="margin:0;font-size:14px;color:#0f766e;">
+    Open <strong>PharmAI</strong> and say <em>"order {medicine_name}"</em> to place your order now.
+  </p>
+</div>
+
+<p style="margin:0;font-size:13px;color:#94a3b8;text-align:center;">
+  You're receiving this because you subscribed to a restock alert for {medicine_name}.
+</p>"""
+
+    subject = f"Back in Stock: {medicine_name} | PharmAI"
+    preview = f"{medicine_name} is back in stock! Order now on PharmAI."
     html = _base_template(content, preview)
 
     return await _send_email(to, subject, html)

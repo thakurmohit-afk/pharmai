@@ -178,6 +178,7 @@ async def upload_prescription(
             "prescription_date": result.get("prescription_date"),
             "medicines": result.get("extracted_medicines", []),
             "advice": result.get("advice", []),
+            "summary": result.get("summary", ""),
         }
 
         await _set_rx_state(user_id, "verified")

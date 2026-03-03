@@ -15,7 +15,9 @@ import {
 } from "lucide-react";
 import { Navigate } from "react-router-dom";
 
-const API_BASE = (import.meta.env.VITE_API_BASE || "/api")
+const API_BASE = (import.meta.env.DEV
+  ? (import.meta.env.VITE_API_BASE || "/api")
+  : "/api")
   .replace(/\/api$/, "")
   .replace(/\/$/, "");
 
@@ -62,7 +64,7 @@ export default function Index() {
   const orders = dashboard?.order_history || [];
 
   const hour = new Date().getHours();
-  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  const greeting = hour < 12 ? "Good morning ☀️" : hour < 17 ? "Good afternoon 🌤️" : "Good evening 🌙";
   const firstName = profile?.name ? profile.name.split(" ")[0] : "User";
   const avatarSrc = profile?.avatar_url
     ? (profile.avatar_url.startsWith("http") ? profile.avatar_url : `${API_BASE}${profile.avatar_url}`)
@@ -120,16 +122,20 @@ export default function Index() {
       <Sidebar />
 
       <div className="flex-1 flex flex-col h-screen overflow-hidden relative">
-        {/* Ambient bg */}
+        {/* Ambient bg — animated gradient mesh */}
         <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
           <div className={cn(
-            "absolute -top-[20%] -left-[10%] w-[50%] h-[50%] rounded-full blur-[120px] opacity-30",
+            "absolute -top-[20%] -left-[10%] w-[50%] h-[50%] gradient-mesh-blob opacity-30",
             theme === "dark" ? "bg-emerald-900/30" : "bg-emerald-100/50"
           )} />
           <div className={cn(
-            "absolute top-[50%] -right-[10%] w-[35%] h-[50%] rounded-full blur-[120px] opacity-25",
+            "absolute top-[50%] -right-[10%] w-[35%] h-[50%] gradient-mesh-blob opacity-25",
             theme === "dark" ? "bg-teal-900/20" : "bg-teal-50/60"
-          )} />
+          )} style={{ animationDelay: "-7s" }} />
+          <div className={cn(
+            "absolute top-[10%] right-[20%] w-[25%] h-[35%] gradient-mesh-blob opacity-15",
+            theme === "dark" ? "bg-blue-900/15" : "bg-blue-50/40"
+          )} style={{ animationDelay: "-14s" }} />
         </div>
 
         <TopNavbar onOpenProfileDrawer={() => setIsProfileOpen(true)} profile={profile} />
@@ -143,10 +149,10 @@ export default function Index() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, type: "spring" }}
               className={cn(
-                "rounded-2xl p-6 flex flex-col sm:flex-row items-start sm:items-center gap-5",
+                "glass-card glow-border p-6 flex flex-col sm:flex-row items-start sm:items-center gap-5",
                 theme === "dark"
-                  ? "bg-slate-900/40 border border-white/5"
-                  : "bg-white border border-slate-200/60 shadow-sm"
+                  ? ""
+                  : ""
               )}
             >
               {avatarSrc ? (
@@ -187,10 +193,10 @@ export default function Index() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.2 }}
               className={cn(
-                "rounded-2xl p-5 border flex items-start gap-4",
+                "glass-card p-5 flex items-start gap-4",
                 theme === "dark"
-                  ? "bg-emerald-500/5 border-emerald-500/15"
-                  : "bg-gradient-to-r from-emerald-50 to-teal-50/50 border-emerald-200/60"
+                  ? ""
+                  : ""
               )}
             >
               <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center shrink-0", theme === "dark" ? "bg-emerald-500/15" : "bg-emerald-100")}>
@@ -207,7 +213,7 @@ export default function Index() {
               <button
                 onClick={insight.action}
                 className={cn(
-                  "px-4 py-2 rounded-xl text-xs font-semibold shrink-0 transition-all",
+                  "px-4 py-2 rounded-xl text-xs font-semibold shrink-0 transition-all btn-glow",
                   theme === "dark"
                     ? "bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25"
                     : "bg-emerald-600 text-white hover:bg-emerald-500 shadow-sm"

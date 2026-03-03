@@ -1,154 +1,198 @@
-# PharmAI
+<p align="center">
+  <h1 align="center">💊 PharmAI</h1>
+  <p align="center"><strong>AI-Powered Autonomous Pharmacy Platform</strong></p>
+  <p align="center">
+    Multi-agent AI system that handles medicine ordering, prescription analysis, voice interactions, and pharmacy operations — end to end.
+  </p>
+</p>
 
-PharmAI is an agentic pharmacy assistant with:
-- GPT pharmacist chat + tool-calling medicine search
-- safety/inventory-aware order flow
-- Razorpay test-mode payment confirmation
-- voice and prescription upload support
-- app-level auth with account-scoped history
+---
 
-## Runtime Architecture (Source of Truth)
+## 🏗️ Architecture
 
-Main orchestration lives in `backend/app/agents/graph.py`:
-1. `profiling`
-2. `predictive`
-3. `pharmacist`
-4. conditional `safety -> inventory -> execution` when order action proceeds
-5. payment finalize in `POST /api/payment/verify`
+```
+┌─────────────────────────────────────────────────────────┐
+│                    React Frontend (Vite)                 │
+│  Chat UI · Voice Mode · Prescription Upload · Admin     │
+└─────────────────────┬───────────────────────────────────┘
+                      │ REST API + WebSocket
+┌─────────────────────▼───────────────────────────────────┐
+│                 FastAPI Backend                          │
+│                                                         │
+│  ┌──────────────────────────────────────────────────┐   │
+│  │            LangGraph Multi-Agent Pipeline         │   │
+│  │                                                   │   │
+│  │  Supervisor → Understanding → Pharmacist AI       │   │
+│  │     → Safety Gate → Inventory → Execution         │   │
+│  │     → Patient Profiling → Predictive Analytics    │   │
+│  └──────────────────────────────────────────────────┘   │
+│                                                         │
+│  Services: Medicine Search · Clinical Validator         │
+│  Prescription OCR (Gemini) · ML Forecast · TTS/STT     │
+│  Patient Profiler · Pricing Engine · Email/SMS          │
+└─────────────────────┬───────────────────────────────────┘
+                      │
+        ┌─────────────┼─────────────┐
+        ▼             ▼             ▼
+   SQLite DB      Redis Cache    OpenAI / Gemini
+```
 
-Conversation persistence:
-- `chat_threads` + `chat_messages` store per-account thread history
-- `user_memories` stores compact long-term summary per user
-- pending-order confirmation state is thread-scoped (`chat_thread_state`)
-- confirmation intent is GPT-classified (no hardcoded keyword requirement)
-- confirmation is asked once per quote version; unclear replies do not execute orders
-- first valid confirmation reply after summary proceeds directly to execution/payment path
-- legacy pending states are auto-hydrated with derived `quote_signature` + confirmation flags
+---
 
-## Auth + Sessions
+## ✨ Key Features
 
-- Email/password auth (`/api/auth/*`)
-- HttpOnly cookie sessions (access + refresh)
-- Refresh token rotation backed by `user_sessions`
-- RBAC: `/api/admin/*` requires `role=admin`
-- Dev-only bypass available via `ALLOW_DEMO_BYPASS=true` and `/api/auth/dev-login`
+### 🤖 AI Chat Assistant
+- Natural language medicine ordering ("I have a headache")
+- Multi-turn conversations with context memory
+- Automatic cart building, payment flow, and delivery tracking
+- Medicine recommendations with clinical validation
 
-## API Highlights
+### 📋 Prescription OCR
+- Upload prescription images or PDFs
+- **Google Gemini 3.0 Flash** extracts medicines, dosages, and doctor info
+- Auto-matches against medicine database with clinical-grade accuracy
+- Molecule-level ingredient matching (exact, strength mismatch, therapeutic equivalent)
+- Prescription date validation and completeness checks
 
-- `POST /api/auth/register`
-- `POST /api/auth/login`
-- `POST /api/auth/refresh`
-- `POST /api/auth/logout`
-- `GET /api/auth/me`
-- `POST /api/auth/dev-login` (dev-only)
+### 🎤 Voice Mode
+- Inline voice interaction — chat stays visible
+- Browser STT → existing chat pipeline → ElevenLabs TTS
+- Real-time shader ball visualization with listening/speaking states
 
-- `POST /api/chat` body: `{ message, conversation_id }` (conversation is required)
-- `POST /api/chat` returns:
-  - `422 conversation_required` if `conversation_id` missing
-  - `404 conversation_not_found` if thread does not exist or is not owned by caller
-- `POST /api/chat` response includes deterministic `quote` when medicine/order context exists:
-  - `currency`, `display_unit`, `total_amount`, `conversion_note`, `lines[]`
-  - `lines[]` include `requested_qty/unit` and canonical `billing_qty` in strips
-- `GET /api/chat/threads`
-- `POST /api/chat/threads`
-- `GET /api/chat/threads/{conversation_id}/messages`
-- `DELETE /api/chat/threads/{conversation_id}`
-- `DELETE /api/chat/threads?scope=all` (bulk delete current user's threads; admin can pass `demo_users=true`)
+### 🏥 Multi-Agent Pipeline (LangGraph)
+| Agent | Role |
+|---|---|
+| **Supervisor** | Routes queries to the right specialist agent |
+| **Understanding** | NLU — extracts intent, entities, medicine names |
+| **Pharmacist AI** | Clinical reasoning, drug info, dosage guidance |
+| **Safety Gate** | Blocks dangerous interactions, validates prescriptions |
+| **Inventory** | Real-time stock check, pricing, alternatives |
+| **Execution** | Cart ops, order placement, payment orchestration |
+| **Patient Profiler** | Builds patient intelligence from conversation history |
+| **Predictive** | Refill predictions, adherence tracking |
 
-- `GET /api/system/llm-status` (OpenAI auth/config probe)
-- `GET /api/system/cache-status` (active cache backend + namespace)
-- `POST /api/system/cache/clear` (admin-only)
+### 📊 Admin Panel
+- **Overview Dashboard** — orders, revenue, user stats (live data)
+- **Medicine Inventory** — stock management + AI CSV import
+- **AI Insights** — model performance, pipeline analytics
+- **Trace Explorer** — live Chain of Thought for every user query
+- **Analytics & Forecast** — ML-powered demand forecasting
+- **Refill Calls** — automated outbound refill reminders via Twilio
+- **System Health** — LLM status, cache, queue monitoring
 
-- `GET /api/user/me/profile`
-- `GET /api/user/me/dashboard`
+### 🛒 E-Commerce
+- Smart cart with real-time pricing
+- Razorpay payment integration (test mode)
+- Order tracking with delivery status
+- Waitlist for out-of-stock medicines
 
-- `POST /api/voice/token` (voice auth token for ElevenLabs bridge)
-- `POST /v1/chat/completions` (ElevenLabs custom LLM endpoint)
-- `POST /api/prescription/upload`
-- `POST /api/payment/verify`
+---
 
-## Local Setup
+## 🛠️ Tech Stack
+
+| Layer | Technology |
+|---|---|
+| **Frontend** | React 18, TypeScript, Vite, Tailwind CSS, Framer Motion, Three.js |
+| **Backend** | FastAPI, Python 3.12, LangGraph, SQLAlchemy (async) |
+| **AI/LLM** | OpenAI GPT-4.1, Google Gemini 3.0 Flash, LangChain |
+| **Database** | SQLite (dev) / PostgreSQL (prod), Redis cache |
+| **Voice** | Web Speech API (STT), ElevenLabs (TTS) |
+| **Payments** | Razorpay |
+| **Calls** | Twilio (outbound refill reminders) |
+| **Email** | Gmail SMTP (order confirmations) |
+| **Observability** | LangFuse (LLM tracing) |
+
+---
+
+## 🚀 Quick Start
+
+### Prerequisites
+- Python 3.12+
+- Node.js 18+ & pnpm
+- OpenAI API key
+- Google Gemini API key
 
 ### Backend
-
 ```bash
 cd backend
 python -m venv venv
-venv\Scripts\activate
+venv\Scripts\activate        # Windows
 pip install -r requirements.txt
-copy .env.example .env
-```
 
-Recommended local `.env` defaults:
+# Configure environment
+cp .env.example .env
+# Edit .env with your API keys
 
-```env
-DATABASE_URL=sqlite+aiosqlite:///./pharmacy.db
-APP_ENV=development
-AUTH_ENABLED=true
-ALLOW_DEMO_BYPASS=true
-PAYMENT_ENABLED=false
-```
-
-Seed/reset local DB:
-
-```bash
-python seed_data.py
-```
-
-Purge only demo thread noise (without reseeding medicines/orders):
-
-```bash
-python scripts/purge_demo_threads.py
-# optional:
-# python scripts/purge_demo_threads.py --include-memory
-```
-
-Run backend:
-
-```bash
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+# Run
+uvicorn app.main:app --reload --port 8000
 ```
 
 ### Frontend
-
 ```bash
-cd frontend
-npm install
-npm run dev
+cd frontend_v2
+pnpm install
+pnpm dev                     # Runs on http://localhost:8080
 ```
 
-Frontend env:
+---
 
-```env
-VITE_ELEVENLABS_AGENT_ID=agent_xxx
-VITE_ALLOW_DEMO_BYPASS=true
-# Optional if not using Vite proxy:
-# VITE_API_BASE=http://localhost:8000/api
+## 🌐 Deployment
+
+| Service | Platform | Config |
+|---|---|---|
+| Frontend | Vercel | `frontend_v2/vercel.json` |
+| Backend | Render | `render.yaml` |
+
+See deployment configs in the repo root. Set `VITE_API_BASE` on Vercel pointing to your Render backend URL.
+
+---
+
+## 📁 Project Structure
+
+```
+HF26/
+├── backend/
+│   ├── app/
+│   │   ├── agents/          # LangGraph multi-agent pipeline
+│   │   │   ├── graph.py     # Main agent orchestration graph
+│   │   │   ├── pharmacist.py # Clinical reasoning agent
+│   │   │   ├── safety.py    # Safety gate agent
+│   │   │   ├── inventory.py # Stock & pricing agent
+│   │   │   └── ...
+│   │   ├── models/          # SQLAlchemy models
+│   │   ├── routes/          # FastAPI endpoints
+│   │   ├── services/        # Business logic
+│   │   │   ├── prescription_service.py  # Gemini OCR
+│   │   │   ├── clinical_validator.py    # Drug matching
+│   │   │   ├── medicine_search.py       # Hybrid search
+│   │   │   ├── patient_profiler.py      # Intelligence engine
+│   │   │   └── ...
+│   │   └── config.py        # Settings
+│   └── requirements.txt
+│
+├── frontend_v2/
+│   ├── client/
+│   │   ├── components/      # React components
+│   │   │   ├── chat/        # Chat UI (ChatArea, ShaderCanvas, Cards)
+│   │   │   └── admin/       # Admin panel components
+│   │   ├── pages/           # Route pages
+│   │   ├── hooks/           # Voice agent hooks
+│   │   ├── services/api.ts  # API client
+│   │   └── context/         # Auth, Theme providers
+│   └── vercel.json
+│
+├── render.yaml              # Render deployment config
+└── .gitignore
 ```
 
-## Seeded Demo Accounts (Local Only)
+---
 
-All seeded demo accounts use password: `Demo@1234`
+## 👥 Team
 
-- `aarav@demo.com` (`user`) - `72bbd3a6-f61d-4e85-849c-2fb3364ee71e`
-- `priya@demo.com` (`user`) - `fddcb7b6-2995-4eb7-a2e3-2df541d62fc6`
-- `rahul@demo.com` (`user`) - `7a7189fb-f225-4e24-aac4-be387c9b697a`
-- `admin@demo.com` (`admin`) - `9f4b3f2b-8ec8-4d88-b95b-19d8d7f6f100`
+Built for **HackFusia 2026** 🏆
 
-## Deployment Notes (Current Phase)
+---
 
-- Razorpay stays in test mode.
-- App auth is now enabled; keep infra restrictions for admin/webhook paths as defense-in-depth.
-- PostgreSQL + Redis are recommended for VPS deployment.
-- Pricing contract for this phase:
-  - `medicine.price` is interpreted as price per strip.
-  - Inventory stock is treated as strips.
-- Thread creation contract:
-  - manual-only from `POST /api/chat/threads`
-  - chat send will not auto-create a thread on missing/invalid IDs
+## 📄 License
 
-## Non-Goals in This Phase
-
-- Forgot-password flow
-- OAuth/OTP login providers
-- Public anonymous chat mode
+MIT

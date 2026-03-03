@@ -24,6 +24,7 @@ export interface InventoryItem {
   stock_quantity: number;
   min_stock_threshold: number;
   unit_type: string;
+  price: number;
   status: "ok" | "low" | "critical";
 }
 

@@ -1,4 +1,4 @@
-"""Prescription service — Gemini OCR + clinical-grade medicine DB matching."""
+"""Prescription service — OpenAI Vision OCR + clinical-grade medicine DB matching."""
 
 import base64
 import json
@@ -61,13 +61,12 @@ Rules:
 
 
 async def _ocr_with_gemini(image_bytes: bytes, filename: str) -> dict:
-    """Use Google Gemini 2.0 Flash for prescription OCR."""
-    import google.generativeai as genai
+    """Use Google Gemini 2.5 Flash for prescription OCR (new google-genai SDK)."""
+    from google import genai
+    from google.genai import types
 
     s = get_settings()
-    genai.configure(api_key=s.gemini_api_key)
-
-    model = genai.GenerativeModel("gemini-3.0-flash")
+    client = genai.Client(api_key=s.gemini_api_key)
 
     # Detect mime type
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "jpeg"
@@ -77,20 +76,40 @@ async def _ocr_with_gemini(image_bytes: bytes, filename: str) -> dict:
     }
     mime_type = mime_map.get(ext, "image/jpeg")
 
-    response = model.generate_content(
-        [
-            OCR_PROMPT,
-            {"mime_type": mime_type, "data": image_bytes},
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=[
+            types.Part.from_text(text=OCR_PROMPT),
+            types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
         ],
-        generation_config=genai.types.GenerationConfig(
+        config=types.GenerateContentConfig(
             response_mime_type="application/json",
             temperature=0.1,
-            max_output_tokens=1500,
+            max_output_tokens=8192,
         ),
     )
 
-    content = response.text
-    return json.loads(content)
+    content = response.text.strip()
+    logger.info("Gemini OCR raw response (first 500 chars): %s", content[:500])
+
+    # Strip markdown code fences if Gemini wraps the JSON
+    if content.startswith("```"):
+        # Remove ```json ... ``` or ``` ... ```
+        lines = content.split("\n")
+        lines = [l for l in lines if not l.strip().startswith("```")]
+        content = "\n".join(lines).strip()
+
+    # Try parsing directly
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        # Try to find a JSON object in the response
+        import re
+        match = re.search(r'\{[\s\S]*\}', content)
+        if match:
+            return json.loads(match.group())
+        logger.error("Cannot parse Gemini response as JSON: %s", content[:1000])
+        raise
 
 
 async def _ocr_with_openai(image_bytes: bytes, filename: str) -> dict:
@@ -194,28 +213,132 @@ async def _match_medicines_to_db(extracted_medicines: list[dict]) -> list[dict]:
     return enriched
 
 
+def _build_prescription_summary(
+    enriched_medicines: list[dict],
+    advice: list,
+    doctor_name: str | None,
+    prescription_date: str | None,
+    confidence: float,
+    meta_warnings: list[str],
+) -> str:
+    """Build a TTS-friendly, natural spoken summary of the prescription analysis."""
+    parts = []
+
+    # Natural opening
+    if doctor_name and prescription_date:
+        parts.append(f"I've analyzed the prescription from Doctor {doctor_name}, dated {prescription_date}.")
+    elif doctor_name:
+        parts.append(f"I've analyzed the prescription from Doctor {doctor_name}.")
+    elif prescription_date:
+        parts.append(f"I've analyzed your prescription dated {prescription_date}.")
+    else:
+        parts.append("I've analyzed your prescription.")
+
+    # Medicines — natural spoken list
+    if enriched_medicines:
+        count = len(enriched_medicines)
+        parts.append(f"I found {count} {'medicine' if count == 1 else 'medicines'} on it.")
+
+        available = []
+        unavailable = []
+        not_found = []
+
+        for med in enriched_medicines:
+            name = med.get("name", "Unknown")
+            dosage = med.get("dosage", "")
+            frequency = med.get("frequency", "")
+
+            # Build description
+            desc = name
+            if dosage:
+                desc += f" {dosage}"
+
+            db_matches = med.get("db_matches", [])
+            if db_matches:
+                best = db_matches[0]
+                in_stock = best.get("in_stock", False)
+                price = best.get("price", 0)
+                match_quality = best.get("match_quality", "no_match")
+
+                freq_part = f", to be taken {frequency}" if frequency else ""
+
+                if in_stock:
+                    price_part = f" at {price} rupees" if price else ""
+                    if match_quality == "exact":
+                        available.append(f"{desc}{freq_part}, and it's available in our store{price_part}")
+                    elif match_quality == "strength_mismatch":
+                        available.append(f"{desc}{freq_part}. We have a similar strength available{price_part}")
+                    elif match_quality == "therapeutic_equivalent":
+                        available.append(f"{desc}{freq_part}. We have a therapeutic equivalent available{price_part}")
+                    else:
+                        available.append(f"{desc}{freq_part}, available{price_part}")
+                else:
+                    unavailable.append(f"{desc}{freq_part}, but it's currently out of stock")
+            else:
+                freq_part = f", to be taken {frequency}" if frequency else ""
+                not_found.append(f"{desc}{freq_part}, but we don't have it in our inventory")
+
+        # Speak available first
+        all_items = available + unavailable + not_found
+        for i, item in enumerate(all_items):
+            if len(all_items) == 1:
+                parts.append(f"That's {item}.")
+            elif i == 0:
+                parts.append(f"First, {item}.")
+            elif i == len(all_items) - 1:
+                parts.append(f"And lastly, {item}.")
+            else:
+                parts.append(f"Next, {item}.")
+
+        # Stock summary
+        if available and not unavailable and not not_found:
+            parts.append(f"All {'medicines are' if count > 1 else 'medicine is'} available. Would you like me to add them to your cart?")
+        elif unavailable or not_found:
+            avail_count = len(available)
+            if avail_count > 0:
+                parts.append(f"{avail_count} out of {count} medicines are available. Would you like me to add the available ones to your cart?")
+    else:
+        parts.append("I couldn't extract any medicines from this prescription. Could you try uploading a clearer image?")
+
+    # Advice — spoken naturally
+    if advice:
+        parts.append("The doctor also advises")
+        advice_texts = []
+        for item in advice:
+            if isinstance(item, dict):
+                advice_texts.append(item.get("text", item.get("advice", str(item))))
+            else:
+                advice_texts.append(str(item))
+        if len(advice_texts) == 1:
+            parts[-1] += f" {advice_texts[0]}."
+        else:
+            parts[-1] += f" the following: {', and '.join(advice_texts)}."
+
+    # Warnings — spoken naturally
+    if meta_warnings:
+        parts.append("Just a heads up, " + ". Also, ".join(meta_warnings) + ".")
+
+    return " ".join(parts)
+
+
 async def process_prescription_upload(
     user_id: str,
     image_bytes: bytes,
     filename: str,
     db: AsyncSession,
 ) -> dict:
-    """Process uploaded prescription image via Gemini OCR (fallback: GPT Vision).
+    """Process uploaded prescription image via OpenAI Vision OCR (fallback: Gemini).
 
-    1. Send image to Gemini/GPT for extraction (medicines + advice separated)
+    1. Send image to GPT-4.1 Vision / Gemini for extraction (medicines + advice separated)
     2. Match each extracted medicine against the medicine database
     3. Store in prescriptions table
     4. Return enriched medicines + advice + confidence
     """
     try:
-        # Use Gemini if API key is configured, otherwise fall back to OpenAI
+        # Use OpenAI as primary OCR, fall back to Gemini
         s = get_settings()
-        if s.gemini_api_key:
-            logger.info("Using Gemini OCR for prescription extraction")
-            extracted = await _ocr_with_gemini(image_bytes, filename)
-        else:
-            logger.info("Gemini key not set, falling back to GPT Vision OCR")
-            extracted = await _ocr_with_openai(image_bytes, filename)
+        logger.info("Using OpenAI GPT-4.1 Vision for prescription OCR")
+        extracted = await _ocr_with_openai(image_bytes, filename)
 
         # Match only actual medicines against the DB (skip advice items)
         raw_medicines = extracted.get("medicines", [])
@@ -255,6 +378,13 @@ async def process_prescription_upload(
             confidence,
         )
 
+        # Build natural language summary
+        summary_text = _build_prescription_summary(
+            enriched_medicines, extracted.get("advice", []),
+            extracted.get("doctor_name"), extracted.get("prescription_date"),
+            confidence, meta_warnings,
+        )
+
         return {
             "prescription_id": prescription_id,
             "extracted_medicines": enriched_medicines,
@@ -263,11 +393,13 @@ async def process_prescription_upload(
             "prescription_date": extracted.get("prescription_date"),
             "prescription_warnings": meta_warnings,
             "confidence": confidence,
+            "summary": summary_text,
             "success": True,
         }
 
     except Exception as e:
-        logger.error("Prescription OCR error: %s", e)
+        import traceback
+        logger.error("Prescription OCR error: %s\n%s", e, traceback.format_exc())
         return {
             "prescription_id": None,
             "extracted_medicines": [],

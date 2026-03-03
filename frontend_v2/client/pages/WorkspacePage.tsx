@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/context/AuthContext";
 import Sidebar from "@/components/Sidebar";
 import { ShaderCanvas } from "@/components/chat/ShaderCanvas";
+import VoiceOverlay from "@/components/chat/VoiceOverlay";
 
 /* ── CSS Animations ── */
 const ANIM_CSS = `
@@ -102,6 +103,7 @@ export default function WorkspacePage() {
     const [expandingPanel, setExpandingPanel] = useState<"chat" | "voice" | null>(null);
     const [hoveredPanel, setHoveredPanel] = useState<"chat" | "voice" | null>(null);
     const [hoveredSuggestion, setHoveredSuggestion] = useState<number | null>(null);
+    const [voiceOpen, setVoiceOpen] = useState(false);
 
     const typedText = useTypewriter(TYPEWRITER_PHRASES);
 
@@ -120,10 +122,13 @@ export default function WorkspacePage() {
     const firstName = user?.name ? user.name.split(" ")[0] : "there";
 
     const handlePanelSelect = (panel: "chat" | "voice") => {
+        if (panel === "voice") {
+            setVoiceOpen(true);
+            return;
+        }
         setExpandingPanel(panel);
         setTimeout(() => {
-            if (panel === "chat") navigate("/chat");
-            else navigate("/chat?voice=1");
+            navigate("/chat");
         }, 650);
     };
 
@@ -354,18 +359,7 @@ export default function WorkspacePage() {
                     </motion.button>
                 </motion.div>
 
-                {/* Bottom tag */}
-                <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: expandingPanel ? 0 : 1 }}
-                    transition={{ delay: 0.6, duration: 0.6 }}
-                    className="absolute bottom-6 flex items-center gap-2 z-10"
-                >
-                    <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#052e16]/5">
-                        <Sparkles className="w-3 h-3 text-emerald-600/40" />
-                        <span className="text-[10px] font-semibold text-[#14532d]/35">Powered by PharmAI</span>
-                    </div>
-                </motion.div>
+
 
                 {/* ═══════ FULL-SCREEN EXPAND ═══════ */}
                 <AnimatePresence>
@@ -402,6 +396,9 @@ export default function WorkspacePage() {
                         </motion.div>
                     )}
                 </AnimatePresence>
+
+                {/* ── Voice Overlay ── */}
+                <VoiceOverlay open={voiceOpen} onClose={() => setVoiceOpen(false)} />
             </div>
         </div>
     );
