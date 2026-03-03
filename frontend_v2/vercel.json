@@ -1,17 +1,6 @@
 {
-    "$schema": "https://openapi.vercel.sh/vercel.json",
-    "framework": "vite",
-    "buildCommand": "pnpm run build:client",
-    "outputDirectory": "dist/spa",
-    "installCommand": "pnpm install",
-    "rewrites": [
-        {
-            "source": "/api/:path*",
-            "destination": "${VITE_API_BASE}/:path*"
-        },
-        {
-            "source": "/((?!api|assets|favicon).*)",
-            "destination": "/index.html"
-        }
-    ]
+    "installCommand": "pnpm install --no-frozen-lockfile",
+    "buildCommand": "pnpm run build",
+    "outputDirectory": "dist",
+    "framework": "vite"
 }
